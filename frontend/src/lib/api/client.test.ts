@@ -94,9 +94,16 @@ describe('apiFetch', () => {
         jsonResponse({ error: { code: 'AUTH_EXPIRED', message: 'x' } }, { status: 401 }),
       );
 
+    const expiredListener = vi.fn();
+    window.addEventListener('heyday:auth-expired', expiredListener);
+
     await expect(apiFetch('/foo')).rejects.toBeInstanceOf(AuthExpiredError);
     expect(useAuthStore.getState().accessToken).toBeNull();
     expect(useAuthStore.getState().user).toBeNull();
+    // El SessionWatcher se monta en (app)/layout y reacciona a este evento.
+    expect(expiredListener).toHaveBeenCalledTimes(1);
+
+    window.removeEventListener('heyday:auth-expired', expiredListener);
   });
 
   it('no dispara refresh en /auth/login (skipAuth)', async () => {

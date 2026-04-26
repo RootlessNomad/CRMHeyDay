@@ -15,7 +15,9 @@
     "lint:fix": "eslint src --fix",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "e2e": "playwright test",
+    "e2e:install": "playwright install --with-deps chromium"
   },
   "dependencies": {
     "@heyday/shared": "workspace:*",
@@ -32,6 +34,7 @@
     "zustand": "5.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.48.2",
     "@testing-library/jest-dom": "6.5.0",
     "@testing-library/react": "16.0.1",
     "@types/node": "20.14.15",

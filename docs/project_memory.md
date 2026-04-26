@@ -3,9 +3,9 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: M0 Foundation cerrado (11/11 IT) + `/review` YELLOW + cleanup completo. Listo para M1.
-- **Last Completed**: Cleanup pre-M1 (lint+format+typecheck verde en los 3 workspaces, `prettier-plugin-tailwindcss` instalado, `error.tsx` con directiva eslint-disable redundante eliminada, import `AnthropicError` no usado en test eliminado, `git init -b main` con identidad configurada, work_log y task_tracker sincronizados con Fastify 5.1).
-- **Next Step**: **M1 — UJ-01 Login y sesión persistente**.
+- **Phase**: M0 cerrado + M1 en marcha (1/6 UJ).
+- **Last Completed**: UJ-01 Login y sesión persistente — delta sobre IT-09+IT-10: `SessionWatcher` global (evento window + BroadcastChannel), logout multi-pestaña, Playwright config + 3 specs E2E gated por env. 87 tests verdes (73 backend + 14 frontend).
+- **Next Step**: **UJ-02 CRUD Empresas**. Backend: `/companies` CRUD con dedupe por dominio + soft delete. Frontend: lista con filtros (q, vertical, ciudad, tag), detalle con tabs (overview/contactos/leads/actividad), modales crear/editar.
 
 ## Estado verificable
 

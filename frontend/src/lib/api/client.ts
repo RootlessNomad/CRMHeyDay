@@ -132,6 +132,12 @@ export async function apiFetch<T = unknown>(path: string, init: ApiRequestInit =
       res = await rawFetch(path, init);
     } else {
       useAuthStore.getState().clear();
+      // Notifica al SessionWatcher (montado en (app)/layout) para que muestre
+      // toast + redirija. Si no hay listener (ej. tests Node), el evento se
+      // pierde silenciosamente — no hace daño.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('heyday:auth-expired'));
+      }
       throw new AuthExpiredError();
     }
   }

@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { logoutRequest } from '@/lib/auth/api';
+import { broadcastLogout } from '@/lib/auth/broadcast';
 import { useAuthStore } from '@/lib/auth/store';
 
 import { ThemeToggle } from './ThemeToggle';
@@ -26,6 +27,7 @@ export function Topbar(): JSX.Element {
       // ignoramos errores: limpiamos igual en cliente para evitar estado colgado
     }
     clear();
+    broadcastLogout(); // notifica a otras pestañas
     toast.success('Sesión cerrada');
     router.replace('/login');
   }

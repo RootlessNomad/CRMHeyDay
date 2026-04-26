@@ -4,12 +4,14 @@
 import type { ReactNode } from 'react';
 
 import { AuthBootstrap } from '@/components/AuthBootstrap';
+import { SessionWatcher } from '@/components/SessionWatcher';
 import { Sidebar } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
 
 export default function AppLayout({ children }: { children: ReactNode }): JSX.Element {
   return (
     <AuthBootstrap>
+      <SessionWatcher />
       <div className="flex min-h-screen">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
