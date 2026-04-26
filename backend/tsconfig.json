@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": ".",
+    "baseUrl": "./src",
+    "lib": ["ES2022"],
+    "types": ["node", "vitest/globals"],
+    "paths": {
+      "@/*": ["./*"],
+      "@heyday/shared": ["../../shared/src/index.ts"],
+      "@heyday/shared/*": ["../../shared/src/*"]
+    }
+  },
+  "references": [{ "path": "../shared" }],
+  "include": ["src/**/*", "prisma/**/*.ts", "tests/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

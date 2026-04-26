@@ -1,0 +1,59 @@
+# Dockerfile.frontend — Next.js 15
+# Targets:
+#   - dev  → next dev con hot reload
+#   - prod → next build + standalone
+
+# ============ Base ============
+FROM node:20-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+WORKDIR /app
+RUN apk add --no-cache libc6-compat tini
+
+# ============ Deps ============
+FROM base AS deps
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY backend/package.json backend/
+COPY shared/package.json shared/
+COPY frontend/package.json frontend/
+RUN pnpm install --frozen-lockfile --prefer-offline || pnpm install
+
+# ============ Dev ============
+FROM deps AS dev
+ENV NODE_ENV=development
+COPY tsconfig.base.json ./
+COPY shared/ shared/
+COPY frontend/ frontend/
+WORKDIR /app/frontend
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["pnpm", "dev"]
+
+# ============ Builder ============
+FROM deps AS builder
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY tsconfig.base.json ./
+COPY shared/ shared/
+COPY frontend/ frontend/
+RUN pnpm --filter @heyday/shared run build
+RUN pnpm --filter @heyday/frontend run build
+
+# ============ Prod ============
+FROM node:20-alpine AS prod
+RUN apk add --no-cache tini
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+
+RUN addgroup -g 1001 -S nodejs && adduser -S heyday -u 1001 -G nodejs
+
+# Next.js standalone output (requiere `output: 'standalone'` en next.config)
+COPY --from=builder --chown=heyday:nodejs /app/frontend/.next/standalone/ ./
+COPY --from=builder --chown=heyday:nodejs /app/frontend/.next/static/ ./frontend/.next/static/
+COPY --from=builder --chown=heyday:nodejs /app/frontend/public/ ./frontend/public/
+
+USER heyday
+EXPOSE 3000
+WORKDIR /app/frontend
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "server.js"]

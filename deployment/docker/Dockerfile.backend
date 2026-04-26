@@ -1,0 +1,68 @@
+# Dockerfile.backend — multi-stage para API Fastify
+# Targets:
+#   - dev  → pnpm dev con hot reload (se usa con docker compose)
+#   - prod → build compilado, imagen mínima
+#
+# Se construye desde la raíz del repo: `docker build -f deployment/docker/Dockerfile.backend .`
+
+# ============ Base ============
+FROM node:20-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+WORKDIR /app
+# Headers para módulos nativos que algunos paquetes necesitan
+RUN apk add --no-cache libc6-compat tini
+
+# ============ Deps ============
+FROM base AS deps
+# Copiamos solo manifiestos para maximizar caché de Docker
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY backend/package.json backend/
+COPY shared/package.json shared/
+COPY frontend/package.json frontend/
+RUN pnpm install --frozen-lockfile --prefer-offline || pnpm install
+
+# ============ Dev (hot reload) ============
+FROM deps AS dev
+ENV NODE_ENV=development
+COPY tsconfig.base.json ./
+COPY shared/ shared/
+COPY backend/ backend/
+WORKDIR /app/backend
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["pnpm", "dev"]
+
+# ============ Builder (prod) ============
+FROM deps AS builder
+ENV NODE_ENV=production
+COPY tsconfig.base.json ./
+COPY shared/ shared/
+COPY backend/ backend/
+RUN pnpm --filter @heyday/shared run build
+RUN pnpm --filter @heyday/backend run db:generate || true
+RUN pnpm --filter @heyday/backend run build
+
+# ============ Prod ============
+FROM node:20-alpine AS prod
+RUN apk add --no-cache tini && corepack enable && corepack prepare pnpm@9.12.0 --activate
+WORKDIR /app
+ENV NODE_ENV=production
+
+# Usuario sin privilegios
+RUN addgroup -g 1001 -S nodejs && adduser -S heyday -u 1001 -G nodejs
+
+COPY --from=builder --chown=heyday:nodejs /app/package.json ./
+COPY --from=builder --chown=heyday:nodejs /app/pnpm-workspace.yaml ./
+COPY --from=builder --chown=heyday:nodejs /app/pnpm-lock.yaml* ./
+COPY --from=builder --chown=heyday:nodejs /app/shared/ ./shared/
+COPY --from=builder --chown=heyday:nodejs /app/backend/package.json ./backend/
+COPY --from=builder --chown=heyday:nodejs /app/backend/dist/ ./backend/dist/
+COPY --from=builder --chown=heyday:nodejs /app/backend/prisma/ ./backend/prisma/
+
+# Solo dependencias de producción
+RUN pnpm install --prod --frozen-lockfile --prefer-offline || pnpm install --prod
+
+USER heyday
+WORKDIR /app/backend
+EXPOSE 3001
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "dist/api/server.js"]

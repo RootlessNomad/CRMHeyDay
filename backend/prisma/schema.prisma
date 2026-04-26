@@ -1,0 +1,782 @@
+// HeyDay CRM — Prisma schema
+// Source of truth: design/data_model.md (29 entities, 5 módulos).
+// Convención: modelos PascalCase; campos camelCase en el cliente Prisma;
+// columnas y tablas en snake_case en la DB via @map / @@map.
+// Timestamps en timestamptz(6). Soft delete via deleted_at donde aplica.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = []
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// Enums
+// ============================================================
+
+enum UserRole {
+  admin
+  operator
+  viewer
+}
+
+enum IcpVertical {
+  physiotherapy
+  pilates
+  yoga
+  gym_fitness
+  bakery
+  cafe
+  other
+}
+
+enum CompanySizeSignal {
+  solo
+  micro_1_5
+  small_6_25
+  mid_26_100
+  unknown
+}
+
+enum ConsentStatus {
+  unknown
+  public_business_data_only
+  explicit_granted
+  revoked
+}
+
+enum PipelineStageKind {
+  open
+  won
+  lost
+}
+
+enum LeadSource {
+  manual
+  csv_import
+  enrichment
+  n8n_webhook
+  other
+}
+
+enum LeadStatus {
+  open
+  won
+  lost
+  archived
+}
+
+enum TagKind {
+  general
+  vertical
+  persona
+  service_interest
+}
+
+enum TaggableEntityType {
+  company
+  contact
+  lead
+  content_item
+}
+
+enum ActivityKind {
+  note
+  task
+  call_log
+  email_log
+  meeting_log
+}
+
+enum ActivityEntityType {
+  company
+  contact
+  lead
+}
+
+enum EnrichmentRunStatus {
+  queued
+  running
+  partial
+  succeeded
+  failed
+}
+
+enum EnrichmentSourceType {
+  website_scrape
+  google_places
+  lighthouse
+  whois
+  instagram_public
+  linkedin_public
+  facebook_public
+  manual
+}
+
+enum EnrichmentSourceHitStatus {
+  ok
+  blocked
+  not_found
+  error
+}
+
+enum PainPointConfidence {
+  observed
+  inferred
+  speculative
+}
+
+enum DetectionOrigin {
+  rule
+  claude
+  human
+}
+
+enum ContentIdeaStatus {
+  idea
+  in_production
+  shipped
+  archived
+}
+
+enum ContentItemStatus {
+  draft
+  in_review
+  approved
+  exported
+  archived
+}
+
+enum ContentChannel {
+  instagram
+  linkedin
+  newsletter
+}
+
+enum ContentVersionGeneratedBy {
+  claude
+  human
+  claude_edited_by_human
+}
+
+enum IntegrationHealthStatus {
+  ok
+  warn
+  error
+  unknown
+}
+
+enum AiFeature {
+  lead_enrichment_extract
+  pain_points
+  service_fit
+  outbound_prep
+  content_idea
+  content_draft
+  content_adapt
+  other
+}
+
+enum JobQueueStatus {
+  queued
+  running
+  succeeded
+  failed
+}
+
+// ============================================================
+// Módulo: Auth & Users
+// ============================================================
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  name         String
+  role         UserRole  @default(admin)
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sessions                Session[]
+  auditLogs               AuditLog[]                @relation("AuditLogActor")
+  createdCompanies        Company[]                 @relation("CompanyCreatedBy")
+  createdContacts         Contact[]                 @relation("ContactCreatedBy")
+  ownedLeads              Lead[]                    @relation("LeadOwner")
+  ownedActivities         Activity[]                @relation("ActivityOwner")
+  createdActivities       Activity[]                @relation("ActivityCreatedBy")
+  triggeredEnrichmentRuns EnrichmentRun[]
+  verifiedPainPoints      PainPoint[]
+  lastGeneratedOutbound   OutboundPrep[]
+  createdContentIdeas     ContentIdea[]
+  createdContentItems     ContentItem[]             @relation("ContentItemCreatedBy")
+  approvedContentItems    ContentItem[]             @relation("ContentItemApprovedBy")
+  editedContentVersions   ContentVersion[]
+  contentApprovalEvents   ContentApprovalEvent[]
+  createdCredentials      Credential[]
+  aiUsageLogs             AiUsageLog[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Session {
+  id               String    @id @default(cuid())
+  userId           String    @map("user_id")
+  refreshTokenHash String    @map("refresh_token_hash")
+  userAgent        String?   @map("user_agent")
+  ip               String?   @db.Inet
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model AuditLog {
+  id           BigInt   @id @default(autoincrement())
+  actorUserId  String?  @map("actor_user_id")
+  action       String
+  entityType   String?  @map("entity_type")
+  entityId     String?  @map("entity_id")
+  metadata     Json     @default("{}")
+  ip           String?  @db.Inet
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  actor User? @relation("AuditLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([actorUserId])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+// ============================================================
+// Módulo: CRM Core
+// ============================================================
+
+model Company {
+  id              String             @id @default(cuid())
+  name            String
+  website         String?
+  domain          String?            @unique
+  industry        String?
+  icpVertical     IcpVertical?       @map("icp_vertical")
+  country         String             @default("ES")
+  region          String?
+  city            String?
+  postalCode      String?            @map("postal_code")
+  address         String?
+  sizeSignal      CompanySizeSignal? @map("size_signal")
+  phone           String?
+  email           String?
+  whatsapp        String?
+  linkedinUrl     String?            @map("linkedin_url")
+  instagramHandle String?            @map("instagram_handle")
+  notes           String?
+  createdById     String             @map("created_by_id")
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?          @map("deleted_at") @db.Timestamptz(6)
+
+  createdBy                User                       @relation("CompanyCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  contacts                 Contact[]
+  leads                    Lead[]
+  enrichmentRuns           EnrichmentRun[]
+  painPoints               PainPoint[]
+  serviceFitRecommendations ServiceFitRecommendation[]
+  outboundPrep             OutboundPrep?
+
+  @@index([domain])
+  @@index([icpVertical])
+  @@index([city])
+  @@index([deletedAt])
+  @@map("companies")
+}
+
+model Contact {
+  id            String        @id @default(cuid())
+  companyId     String?       @map("company_id")
+  firstName     String        @map("first_name")
+  lastName      String?       @map("last_name")
+  roleTitle     String?       @map("role_title")
+  email         String?
+  phone         String?
+  whatsapp      String?
+  linkedinUrl   String?       @map("linkedin_url")
+  isPrimary     Boolean       @default(false) @map("is_primary")
+  consentStatus ConsentStatus @default(public_business_data_only) @map("consent_status")
+  createdById   String        @map("created_by_id")
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt     DateTime?     @map("deleted_at") @db.Timestamptz(6)
+
+  company      Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  createdBy    User     @relation("ContactCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  primaryLeads Lead[]   @relation("LeadPrimaryContact")
+
+  @@index([companyId])
+  @@index([email])
+  @@map("contacts")
+}
+
+model Pipeline {
+  id        String   @id @default(cuid())
+  name      String
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  stages PipelineStage[]
+  leads  Lead[]
+
+  @@map("pipelines")
+}
+
+model PipelineStage {
+  id         String            @id @default(cuid())
+  pipelineId String            @map("pipeline_id")
+  name       String
+  orderIndex Int               @map("order_index")
+  kind       PipelineStageKind
+  color      String?
+
+  pipeline Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  leads    Lead[]
+
+  @@unique([pipelineId, orderIndex])
+  @@map("pipeline_stages")
+}
+
+model Lead {
+  id               String     @id @default(cuid())
+  companyId        String     @map("company_id")
+  primaryContactId String?    @map("primary_contact_id")
+  pipelineId       String     @map("pipeline_id")
+  stageId          String     @map("stage_id")
+  ownerId          String     @map("owner_id")
+  source           LeadSource @default(manual)
+  status           LeadStatus @default(open)
+  priorityScore    Int        @default(0) @map("priority_score")
+  priorityManual   Int?       @map("priority_manual")
+  nextActionAt     DateTime?  @map("next_action_at") @db.Timestamptz(6)
+  lostReason       String?    @map("lost_reason")
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?  @map("deleted_at") @db.Timestamptz(6)
+
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  primaryContact Contact?       @relation("LeadPrimaryContact", fields: [primaryContactId], references: [id], onDelete: SetNull)
+  pipeline       Pipeline       @relation(fields: [pipelineId], references: [id], onDelete: Restrict)
+  stage          PipelineStage  @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  owner          User           @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+
+  @@index([stageId, priorityScore(sort: Desc)])
+  @@index([ownerId])
+  @@index([status])
+  @@index([companyId])
+  @@index([deletedAt])
+  @@map("leads")
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  color     String?
+  kind      TagKind  @default(general)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  taggables Taggable[]
+
+  @@map("tags")
+}
+
+model Taggable {
+  id         String             @id @default(cuid())
+  tagId      String             @map("tag_id")
+  entityType TaggableEntityType @map("entity_type")
+  entityId   String             @map("entity_id")
+
+  tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([tagId, entityType, entityId])
+  @@index([entityType, entityId])
+  @@map("taggables")
+}
+
+model Activity {
+  id          String             @id @default(cuid())
+  kind        ActivityKind
+  entityType  ActivityEntityType @map("entity_type")
+  entityId    String             @map("entity_id")
+  title       String?
+  body        String?
+  ownerId     String             @map("owner_id")
+  dueAt       DateTime?          @map("due_at") @db.Timestamptz(6)
+  completedAt DateTime?          @map("completed_at") @db.Timestamptz(6)
+  remindAt    DateTime?          @map("remind_at") @db.Timestamptz(6)
+  createdById String             @map("created_by_id")
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  owner     User @relation("ActivityOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  createdBy User @relation("ActivityCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId, dueAt])
+  @@index([ownerId])
+  @@index([dueAt])
+  @@map("activities")
+}
+
+// ============================================================
+// Módulo: Lead Intelligence
+// ============================================================
+
+model EnrichmentRun {
+  id            String              @id @default(cuid())
+  companyId     String              @map("company_id")
+  triggeredById String              @map("triggered_by_id")
+  status        EnrichmentRunStatus @default(queued)
+  inputUrl      String?             @map("input_url")
+  startedAt     DateTime?           @map("started_at") @db.Timestamptz(6)
+  finishedAt    DateTime?           @map("finished_at") @db.Timestamptz(6)
+  errorMessage  String?             @map("error_message")
+  summary       Json                @default("{}")
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  company     Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  triggeredBy User                   @relation(fields: [triggeredById], references: [id], onDelete: Restrict)
+  sourceHits  EnrichmentSourceHit[]
+
+  @@index([companyId])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("enrichment_runs")
+}
+
+model EnrichmentSourceHit {
+  id              String                    @id @default(cuid())
+  runId           String                    @map("run_id")
+  sourceType      EnrichmentSourceType      @map("source_type")
+  sourceUrl       String?                   @map("source_url")
+  status          EnrichmentSourceHitStatus
+  fetchedAt       DateTime                  @map("fetched_at") @db.Timestamptz(6)
+  responseExcerpt String?                   @map("response_excerpt")
+  extracted       Json                      @default("{}")
+  error           String?
+
+  run               EnrichmentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  painPointEvidence PainPoint[]
+
+  @@index([runId])
+  @@index([sourceType])
+  @@map("enrichment_source_hits")
+}
+
+model PainPoint {
+  id                    String              @id @default(cuid())
+  companyId             String              @map("company_id")
+  categoryId            String              @map("category_id")
+  confidence            PainPointConfidence
+  evidenceText          String              @map("evidence_text")
+  evidenceSourceUrl     String?             @map("evidence_source_url")
+  evidenceSourceHitId   String?             @map("evidence_source_hit_id")
+  evidenceTimestamp     DateTime            @map("evidence_timestamp") @db.Timestamptz(6)
+  detectedBy            DetectionOrigin     @map("detected_by")
+  humanVerified         Boolean             @default(false) @map("human_verified")
+  verifiedById          String?             @map("verified_by_id")
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  company            Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category           PainPointCategory    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  evidenceSourceHit  EnrichmentSourceHit? @relation(fields: [evidenceSourceHitId], references: [id], onDelete: SetNull)
+  verifiedBy         User?                @relation(fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, confidence])
+  @@index([categoryId])
+  @@map("pain_points")
+}
+
+model PainPointCategory {
+  id                            String   @id @default(cuid())
+  key                           String   @unique
+  labelEs                       String   @map("label_es")
+  descriptionEs                 String   @map("description_es")
+  defaultServiceRecommendations String[] @map("default_service_recommendations")
+  isActive                      Boolean  @default(true) @map("is_active")
+  createdAt                     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  painPoints PainPoint[]
+
+  @@map("pain_point_categories")
+}
+
+model ServiceLine {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  labelEs         String   @map("label_es")
+  descriptionEs   String   @map("description_es")
+  subCapabilities Json     @default("[]") @map("sub_capabilities")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  serviceFitRecommendations ServiceFitRecommendation[]
+  contentIdeas              ContentIdea[]
+
+  @@map("service_lines")
+}
+
+model ServiceFitRecommendation {
+  id                 String          @id @default(cuid())
+  companyId          String          @map("company_id")
+  serviceLineId      String          @map("service_line_id")
+  triggeringSignals  String[]        @map("triggering_signals")
+  rationaleEs        String          @map("rationale_es")
+  expectedOutcomeEs  String          @map("expected_outcome_es")
+  fitScore           Int             @map("fit_score")
+  generatedBy        DetectionOrigin @map("generated_by")
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  serviceLine ServiceLine @relation(fields: [serviceLineId], references: [id], onDelete: Restrict)
+
+  @@index([companyId])
+  @@index([serviceLineId])
+  @@map("service_fit_recommendations")
+}
+
+model OutboundPrep {
+  id                   String   @id @default(cuid())
+  companyId            String   @unique @map("company_id")
+  segment              String
+  likelyNeed           String   @map("likely_need")
+  outreachAngle        String   @map("outreach_angle")
+  valueProposition     String   @map("value_proposition")
+  servicePitch         String   @map("service_pitch")
+  toneGuidance         String   @map("tone_guidance")
+  priorityScore        Int      @map("priority_score")
+  sdrNotes             String?  @map("sdr_notes")
+  lastGeneratedAt      DateTime @map("last_generated_at") @db.Timestamptz(6)
+  lastGeneratedById    String?  @map("last_generated_by_id")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  company         Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lastGeneratedBy User?   @relation(fields: [lastGeneratedById], references: [id], onDelete: SetNull)
+
+  @@map("outbound_preps")
+}
+
+// ============================================================
+// Módulo: Content Engine
+// ============================================================
+
+model ContentPillar {
+  id            String   @id @default(cuid())
+  key           String   @unique
+  labelEs       String   @map("label_es")
+  descriptionEs String   @map("description_es")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ideas ContentIdea[]
+
+  @@map("content_pillars")
+}
+
+model ContentIdea {
+  id            String            @id @default(cuid())
+  title         String
+  angle         String
+  pillarId      String            @map("pillar_id")
+  serviceLineId String?           @map("service_line_id")
+  icpVertical   IcpVertical?      @map("icp_vertical")
+  briefEs       String            @map("brief_es")
+  status        ContentIdeaStatus @default(idea)
+  createdById   String            @map("created_by_id")
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  pillar      ContentPillar @relation(fields: [pillarId], references: [id], onDelete: Restrict)
+  serviceLine ServiceLine?  @relation(fields: [serviceLineId], references: [id], onDelete: SetNull)
+  createdBy   User          @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  items       ContentItem[]
+
+  @@index([status])
+  @@index([pillarId])
+  @@index([icpVertical])
+  @@map("content_ideas")
+}
+
+model ContentItem {
+  id                String            @id @default(cuid())
+  ideaId            String            @map("idea_id")
+  channel           ContentChannel
+  status            ContentItemStatus @default(draft)
+  scheduledFor      DateTime?         @map("scheduled_for") @db.Date
+  currentVersionId  String?           @unique @map("current_version_id")
+  createdById       String            @map("created_by_id")
+  approvedById      String?           @map("approved_by_id")
+  approvedAt        DateTime?         @map("approved_at") @db.Timestamptz(6)
+  exportedAt        DateTime?         @map("exported_at") @db.Timestamptz(6)
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt         DateTime?         @map("deleted_at") @db.Timestamptz(6)
+
+  idea            ContentIdea            @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  createdBy       User                   @relation("ContentItemCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy      User?                  @relation("ContentItemApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  currentVersion  ContentVersion?        @relation("ContentItemCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  versions        ContentVersion[]       @relation("ContentItemVersions")
+  approvalEvents  ContentApprovalEvent[]
+
+  @@index([status, channel, scheduledFor])
+  @@index([ideaId])
+  @@index([deletedAt])
+  @@map("content_items")
+}
+
+model ContentVersion {
+  id            String                    @id @default(cuid())
+  itemId        String                    @map("item_id")
+  versionNumber Int                       @map("version_number")
+  title         String?
+  body          String
+  hooks         String[]                  @default([])
+  ctas          String[]                  @default([])
+  hashtags      String[]                  @default([])
+  meta          Json                      @default("{}")
+  generatedBy   ContentVersionGeneratedBy @map("generated_by")
+  editedById    String                    @map("edited_by_id")
+  createdAt     DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  item           ContentItem  @relation("ContentItemVersions", fields: [itemId], references: [id], onDelete: Cascade)
+  currentOfItem  ContentItem? @relation("ContentItemCurrentVersion")
+  editedBy       User         @relation(fields: [editedById], references: [id], onDelete: Restrict)
+
+  @@unique([itemId, versionNumber])
+  @@map("content_versions")
+}
+
+model ContentApprovalEvent {
+  id         String   @id @default(cuid())
+  itemId     String   @map("item_id")
+  fromStatus String   @map("from_status")
+  toStatus   String   @map("to_status")
+  actorId    String   @map("actor_id")
+  comment    String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  item  ContentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  actor User        @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([itemId])
+  @@map("content_approval_events")
+}
+
+// ============================================================
+// Módulo: Admin & Infra
+// ============================================================
+
+model Credential {
+  id             String    @id @default(cuid())
+  key            String    @unique
+  provider       String
+  label          String
+  ciphertext     Bytes
+  iv             Bytes
+  authTag        Bytes     @map("auth_tag")
+  keyVersion     Int       @default(1) @map("key_version")
+  isActive       Boolean   @default(true) @map("is_active")
+  lastUsedAt     DateTime? @map("last_used_at") @db.Timestamptz(6)
+  lastRotatedAt  DateTime? @map("last_rotated_at") @db.Timestamptz(6)
+  createdById    String    @map("created_by_id")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdBy User                 @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  health    IntegrationHealth?
+
+  @@map("credentials")
+}
+
+model IntegrationHealth {
+  id              String                   @id @default(cuid())
+  credentialId    String                   @unique @map("credential_id")
+  lastCheckedAt   DateTime?                @map("last_checked_at") @db.Timestamptz(6)
+  lastStatus      IntegrationHealthStatus  @default(unknown) @map("last_status")
+  lastError       String?                  @map("last_error")
+  successCount24h Int                      @default(0) @map("success_count_24h")
+  errorCount24h   Int                      @default(0) @map("error_count_24h")
+
+  credential Credential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+
+  @@map("integration_health")
+}
+
+model AiUsageLog {
+  id                        BigInt    @id @default(autoincrement())
+  feature                   AiFeature
+  model                     String
+  inputTokens               Int       @map("input_tokens")
+  outputTokens              Int       @map("output_tokens")
+  cacheCreationInputTokens  Int       @default(0) @map("cache_creation_input_tokens")
+  cacheReadInputTokens      Int       @default(0) @map("cache_read_input_tokens")
+  estimatedCostUsd          Decimal   @map("estimated_cost_usd") @db.Decimal(10, 6)
+  entityType                String?   @map("entity_type")
+  entityId                  String?   @map("entity_id")
+  userId                    String?   @map("user_id")
+  requestId                 String?   @map("request_id")
+  latencyMs                 Int       @map("latency_ms")
+  createdAt                 DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt, feature])
+  @@index([userId])
+  @@map("ai_usage_logs")
+}
+
+model ExternalApiUsageLog {
+  id               BigInt   @id @default(autoincrement())
+  provider         String
+  endpoint         String
+  unitsConsumed    Int      @map("units_consumed")
+  estimatedCostUsd Decimal  @map("estimated_cost_usd") @db.Decimal(10, 6)
+  entityType       String?  @map("entity_type")
+  entityId         String?  @map("entity_id")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([provider, createdAt])
+  @@map("external_api_usage_logs")
+}
+
+model Job {
+  id         String         @id @default(cuid())
+  queue      String
+  status     JobQueueStatus @default(queued)
+  payload    Json           @default("{}")
+  result     Json?
+  error      String?
+  startedAt  DateTime?      @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime?      @map("finished_at") @db.Timestamptz(6)
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([queue, status])
+  @@index([createdAt(sort: Desc)])
+  @@map("jobs")
+}

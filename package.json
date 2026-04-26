@@ -1,0 +1,64 @@
+{
+  "name": "heyday-crm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HeyDay Studio — CRM + Lead Intelligence + Content Engine",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --stream run dev",
+    "dev:backend": "pnpm --filter @heyday/backend run dev",
+    "dev:worker": "pnpm --filter @heyday/backend run worker:dev",
+    "dev:frontend": "pnpm --filter @heyday/frontend run dev",
+    "build": "pnpm -r run build",
+    "build:shared": "pnpm --filter @heyday/shared run build",
+    "build:backend": "pnpm --filter @heyday/backend run build",
+    "build:frontend": "pnpm --filter @heyday/frontend run build",
+    "lint": "pnpm -r run lint",
+    "lint:fix": "pnpm -r run lint:fix",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "test:unit": "pnpm -r run test:unit",
+    "test:integration": "pnpm -r run test:integration",
+    "test:e2e": "pnpm --filter @heyday/frontend run test:e2e",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\" --ignore-path .prettierignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\" --ignore-path .prettierignore",
+    "db:migrate": "pnpm --filter @heyday/backend run db:migrate",
+    "db:migrate:deploy": "pnpm --filter @heyday/backend run db:migrate:deploy",
+    "db:reset": "pnpm --filter @heyday/backend run db:reset",
+    "db:studio": "pnpm --filter @heyday/backend run db:studio",
+    "seed": "pnpm --filter @heyday/backend run seed",
+    "seed:demo": "pnpm --filter @heyday/backend run seed:demo",
+    "prepare": "husky || true"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.15",
+    "eslint": "9.12.0",
+    "husky": "9.1.6",
+    "lint-staged": "15.2.10",
+    "prettier": "3.3.3",
+    "prettier-plugin-tailwindcss": "0.6.8",
+    "typescript": "5.6.3",
+    "typescript-eslint": "8.8.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "react": "19",
+        "react-dom": "19"
+      }
+    }
+  }
+}

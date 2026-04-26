@@ -1,0 +1,133 @@
+// Error handler global de Fastify. Mapea excepciones conocidas del dominio a un
+// shape HTTP uniforme `{error: {code, message, details?}}` y evita filtrar stacks.
+//
+// Orden de mapping (primer match gana):
+//   - ZodError                    → 400 VALIDATION_ERROR + issues
+//   - AuthError                   → statusCode del error + code
+//   - InvalidJobPayloadError      → 400 VALIDATION_ERROR
+//   - CredentialNotFoundError     → 404 NOT_FOUND
+//   - JobNotFoundError            → 404 NOT_FOUND
+//   - CredentialConflictError     → 409 VALIDATION_ERROR
+//   - SecretNotConfiguredError    → 503 INTEGRATION_UNAVAILABLE
+//   - AnthropicError              → depende de code → 5xx o 429
+//   - Fastify validation (4xx)    → passthrough con normalización
+//   - rate limit (429)            → RATE_LIMITED
+//   - default                     → 500 INTERNAL_ERROR (mensaje genérico)
+
+import { ERROR_CODES } from '@heyday/shared';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { ZodError } from 'zod';
+
+import { AnthropicError } from '../../core/ai/errors.js';
+import { AuthError } from '../../core/auth/errors.js';
+import { SecretNotConfiguredError } from '../../core/config/secrets.js';
+import { InvalidJobPayloadError } from '../../core/queue/types.js';
+import {
+  CredentialConflictError,
+  CredentialNotFoundError,
+} from '../../modules/credentials/service.js';
+import { JobNotFoundError } from '../../modules/jobs/service.js';
+
+interface ErrorBody {
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
+function send(reply: FastifyReply, status: number, body: ErrorBody): FastifyReply {
+  return reply.code(status).type('application/json').send({ error: body });
+}
+
+export function registerErrorHandler(app: FastifyInstance): void {
+  app.setErrorHandler((err: unknown, req: FastifyRequest, reply: FastifyReply) => {
+    // Zod: VALIDATION_ERROR con issues detalladas
+    if (err instanceof ZodError) {
+      req.log.info({ code: ERROR_CODES.VALIDATION_ERROR }, 'validation failed');
+      return send(reply, 400, {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        message: 'Datos de entrada inválidos',
+        details: err.issues,
+      });
+    }
+
+    if (err instanceof AuthError) {
+      return send(reply, err.statusCode, { code: err.code, message: err.message });
+    }
+
+    if (err instanceof InvalidJobPayloadError) {
+      return send(reply, 400, {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        message: 'Payload de job inválido',
+      });
+    }
+
+    if (err instanceof CredentialNotFoundError || err instanceof JobNotFoundError) {
+      return send(reply, 404, { code: ERROR_CODES.NOT_FOUND, message: err.message });
+    }
+
+    if (err instanceof CredentialConflictError) {
+      return send(reply, 409, { code: ERROR_CODES.VALIDATION_ERROR, message: err.message });
+    }
+
+    if (err instanceof SecretNotConfiguredError) {
+      return send(reply, 503, {
+        code: ERROR_CODES.INTEGRATION_UNAVAILABLE,
+        message: 'Servicio externo no configurado',
+      });
+    }
+
+    if (err instanceof AnthropicError) {
+      const status = err.code === 'AI_RATE_LIMITED' ? 429 : err.code === 'AI_TIMEOUT' ? 504 : 503;
+      return send(reply, status, {
+        code: ERROR_CODES.INTEGRATION_UNAVAILABLE,
+        message: 'Servicio IA no disponible',
+      });
+    }
+
+    // Fastify valida schemas (JSON schema) y rate-limit lanza errores con `statusCode`.
+    // Detectamos por duck-typing para no acoplar al tipo exacto.
+    const maybeFastify = err as {
+      statusCode?: number;
+      code?: string;
+      message?: string;
+      validation?: unknown;
+    };
+
+    if (maybeFastify.statusCode === 429) {
+      return send(reply, 429, {
+        code: ERROR_CODES.RATE_LIMITED,
+        message: 'Demasiadas peticiones, inténtalo en unos segundos',
+      });
+    }
+
+    if (
+      typeof maybeFastify.statusCode === 'number' &&
+      maybeFastify.statusCode >= 400 &&
+      maybeFastify.statusCode < 500
+    ) {
+      return send(reply, maybeFastify.statusCode, {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        message: maybeFastify.message ?? 'Petición inválida',
+        ...(maybeFastify.validation ? { details: maybeFastify.validation } : {}),
+      });
+    }
+
+    // Todo lo demás: 500 genérico. Log completo internamente; mensaje genérico al cliente.
+    req.log.error(
+      { err: err instanceof Error ? { message: err.message, stack: err.stack } : err },
+      'unhandled error',
+    );
+    return send(reply, 500, {
+      code: ERROR_CODES.INTERNAL_ERROR,
+      message: 'Error interno del servidor',
+    });
+  });
+
+  // 404 no-matched → formato uniforme
+  app.setNotFoundHandler((_req, reply) => {
+    return send(reply, 404, {
+      code: ERROR_CODES.NOT_FOUND,
+      message: 'Ruta no encontrada',
+    });
+  });
+}

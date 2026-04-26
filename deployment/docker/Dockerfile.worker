@@ -1,0 +1,56 @@
+# Dockerfile.worker — worker BullMQ con Playwright (scraping headless)
+# Usa la imagen oficial de Microsoft Playwright que ya trae navegadores + dependencias.
+
+# ============ Base ============
+FROM mcr.microsoft.com/playwright:v1.47.0-jammy AS base
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+WORKDIR /app
+
+# ============ Deps ============
+FROM base AS deps
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY backend/package.json backend/
+COPY shared/package.json shared/
+COPY frontend/package.json frontend/
+RUN pnpm install --frozen-lockfile --prefer-offline || pnpm install
+
+# ============ Dev ============
+FROM deps AS dev
+ENV NODE_ENV=development
+COPY tsconfig.base.json ./
+COPY shared/ shared/
+COPY backend/ backend/
+WORKDIR /app/backend
+CMD ["pnpm", "worker:dev"]
+
+# ============ Builder ============
+FROM deps AS builder
+ENV NODE_ENV=production
+COPY tsconfig.base.json ./
+COPY shared/ shared/
+COPY backend/ backend/
+RUN pnpm --filter @heyday/shared run build
+RUN pnpm --filter @heyday/backend run db:generate || true
+RUN pnpm --filter @heyday/backend run build
+
+# ============ Prod ============
+FROM mcr.microsoft.com/playwright:v1.47.0-jammy AS prod
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN groupadd -g 1001 nodejs && useradd -u 1001 -g nodejs -s /bin/bash -m heyday
+
+COPY --from=builder --chown=heyday:nodejs /app/package.json ./
+COPY --from=builder --chown=heyday:nodejs /app/pnpm-workspace.yaml ./
+COPY --from=builder --chown=heyday:nodejs /app/pnpm-lock.yaml* ./
+COPY --from=builder --chown=heyday:nodejs /app/shared/ ./shared/
+COPY --from=builder --chown=heyday:nodejs /app/backend/package.json ./backend/
+COPY --from=builder --chown=heyday:nodejs /app/backend/dist/ ./backend/dist/
+COPY --from=builder --chown=heyday:nodejs /app/backend/prisma/ ./backend/prisma/
+
+RUN pnpm install --prod --frozen-lockfile --prefer-offline || pnpm install --prod
+
+USER heyday
+WORKDIR /app/backend
+CMD ["node", "dist/worker/main.js"]

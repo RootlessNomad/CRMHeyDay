@@ -1,0 +1,71 @@
+# Environment
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+.env.test
+!.env.example
+
+# Dependencies
+node_modules/
+.pnpm-store/
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+*.egg-info/
+
+# Prisma
+prisma/migrations/dev/
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
+
+# Turbo / caches
+.turbo/
+.cache/
+.eslintcache
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.cursor/
+
+# Claude Code — los comandos del proyecto sí se versionan; ajustes locales no
+.claude/settings.local.json
+.claude/sessions/
+.claude/projects/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker
+docker-compose.override.yml
+
+# Testing
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+.vitest/

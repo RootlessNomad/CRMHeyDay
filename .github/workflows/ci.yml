@@ -1,0 +1,191 @@
+# CI — HeyDay CRM
+#
+# Jobs en paralelo:
+#   - lint           ESLint + Prettier check (todos los workspaces).
+#   - typecheck      tsc --noEmit por workspace (depende de @heyday/shared compilado).
+#   - test-backend   Vitest unit del backend con servicios Postgres + Redis.
+#   - test-frontend  Vitest jsdom del frontend (sin servicios externos).
+#
+# Triggers: push a main/develop y todos los PRs hacia main.
+
+name: ci
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '9'
+
+jobs:
+  # ----------------------------------------------------------------------
+  # Lint — rápido, sin servicios.
+  # ----------------------------------------------------------------------
+  lint:
+    name: Lint + Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm build:shared
+
+      - name: Prettier check
+        run: pnpm format:check
+
+      - name: ESLint
+        run: pnpm lint
+
+  # ----------------------------------------------------------------------
+  # Typecheck — tsc --noEmit por workspace. Frontend y backend obligatorios.
+  # ----------------------------------------------------------------------
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm build:shared
+
+      - name: Generate Prisma client
+        run: pnpm --filter @heyday/backend run db:generate
+
+      - name: Typecheck frontend
+        run: pnpm --filter @heyday/frontend run typecheck
+
+      - name: Typecheck backend
+        run: pnpm --filter @heyday/backend run typecheck
+
+  # ----------------------------------------------------------------------
+  # Backend tests — Postgres 16 + Redis 7 como services.
+  # `prisma migrate deploy` aplica migraciones contra la DB de test antes de
+  # los tests de integración (los unitarios no la necesitan, pero corremos
+  # ambos sets bajo `test`).
+  # ----------------------------------------------------------------------
+  test-backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: heyday
+          POSTGRES_PASSWORD: heyday
+          POSTGRES_DB: heyday_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      APP_ENV: test
+      LOG_LEVEL: error
+      DATABASE_URL: postgresql://heyday:heyday@localhost:5432/heyday_test?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-access-secret-ci-access-secret-ci-access-01234567
+      JWT_REFRESH_SECRET: ci-refresh-secret-ci-refresh-secret-ci-refresh-7654321
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 14d
+      # 32 bytes base64. Sólo para CI; producción usa otra vía.
+      CREDENTIAL_MASTER_KEY: /3aYnXlHnJ+/6GNH3MWnDmyfXIYeYy09by3/l8vcNKE=
+      APP_URL: http://localhost:3000
+      COOKIE_DOMAIN: localhost
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm build:shared
+
+      - name: Generate Prisma client
+        run: pnpm --filter @heyday/backend run db:generate
+
+      - name: Apply migrations
+        run: pnpm --filter @heyday/backend run db:migrate:deploy
+
+      - name: Run unit tests
+        run: pnpm --filter @heyday/backend run test:unit
+
+  # ----------------------------------------------------------------------
+  # Frontend tests — Vitest jsdom. Sin servicios.
+  # ----------------------------------------------------------------------
+  test-frontend:
+    name: Frontend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm build:shared
+
+      - name: Run frontend tests
+        run: pnpm --filter @heyday/frontend run test
