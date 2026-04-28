@@ -13,6 +13,163 @@ Chronological record of all meaningful work. Each entry covers one infrastructur
 - **Tests**: [Tests created, or "none" / "not applicable"]
 - **Notes**: [Anything relevant for future sessions]
 
+---
+
+### 2026-04-28 — UJ-04 (Pase 2 frontend): Kanban + Lista de Leads
+
+- **Work Done**: Frontend completo de UJ-04 bajo patrón Claude orquestador + Codex ejecutor, dividido en dos sub-pases para reducir exposición a crashes silenciosos.
+  - **Sub-pase 2A — Tipos + API + dialogs** (Codex 7m19s, sin crash):
+    - `frontend/src/types/{lead,pipeline}.ts` espejo del wire camelCase del backend (DTOs de leads/pipelines NO se snake_case-an, a diferencia de companies/contacts).
+    - `frontend/src/lib/api/{leads,pipelines}.ts` (+ tests) con `apiFetch` + `buildSearchParams`. `deleteLead` maneja 204 sin parsear body. +7 tests.
+    - `frontend/src/components/leads/`: `ContactPicker.tsx` (typeahead filtrado por company, hint "Selecciona empresa primero" si null), `LeadFormDialog.tsx` (CompanyPicker + ContactPicker + selects pipeline/stage con reset al cambiar pipeline + owner=`useAuthStore` con TODO(roles) para UJ-11), `WonLeadDialog.tsx`, `LostLeadDialog.tsx` (textarea 1..500). +2 tests dialog.
+    - **Cleanup Claude**: Codex añadió un campo `title` huérfano que el backend ignora; eliminado inline (regla 9: edits triviales single-file van por Claude).
+  - **Sub-pase 2B — Páginas + Kanban + E2E** (Codex ~10m, sin crash):
+    - `frontend/src/components/leads/`: `KanbanBoard.tsx` con `@dnd-kit/core` (DndContext + closestCorners + droppable column + draggable card; sin sortable interno), `LeadList.tsx` con tabla + acciones por fila (Editar/Mover/Won/Lost/Eliminar), `MoveStageDialog.tsx` (delegate Won/Lost al padre via `onRequestWon`/`onRequestLost`), `DeleteLeadDialog.tsx`.
+    - `frontend/src/app/(app)/leads/page.tsx`: toggle Kanban/Lista (segmented), filtros URL-synced (q, owner_id, status, priority_min, view, pipeline_id), botón "Nuevo lead", invalidate de `['leads']` tras cada mutation.
+    - `frontend/src/app/(app)/leads/[id]/page.tsx`: header con stage badge + status + owner + priority + nextActionAt; tabs "Resumen" (datos planos) + "Actividad" (placeholder UJ-05); todas las acciones disponibles (delete redirige a /leads).
+    - `frontend/tests/e2e/leads-crud.spec.ts` gated por env (login → crear empresa → crear lead → mover stage por botón "Mover a stage…" → won → eliminar). NO usa DnD (frágil en E2E).
+    - **Bug crítico mitigado por Claude**: la sandbox de Codex no tiene red al registro npm; Codex creó un shim `frontend/src/types/dnd-kit.d.ts` que enmascaraba la falta de `@dnd-kit/*` y dejaba el árbol sin runtime real. Claude instaló desde shell con red (`pnpm --filter frontend add @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities`) y eliminó el shim. Versiones: core ^6.3.1, sortable ^10.0.0, utilities ^3.2.2.
+- **Files Created**: 11 (Pase 2A) + 7 (Pase 2B) = 18 nuevos.
+- **Files Modified**: `frontend/package.json` (+3 deps), `frontend/src/components/leads/LeadFormDialog.tsx` + test (cleanup `title` huérfano).
+- **Decisiones**:
+  1. **Split en sub-pases 2A/2B**: 2A sin deps nuevas para aislar verificación antes de meter `@dnd-kit`. Reduce exposición a crash silencioso (memoria existente).
+  2. **camelCase end-to-end en leads/pipelines**: confirmado que `service.ts` no remapea (a diferencia de contacts.service.ts), tipos frontend espejan el wire.
+  3. **Owner sin selector en form**: default `useAuthStore((s)=>s.user)?.id`. TODO(roles) marcado para UJ-11.
+  4. **Stages activos = todos los stages** del pipeline (Codex desviation aceptada): `PipelineStageDto` no tiene flag `active`. Si M3 lo añade, se ajusta.
+  5. **Kanban fetch con `pageSize: 200`** (Codex desviation aceptada): pragmático para v1; revisar virtualización si una columna supera ese tamaño.
+  6. **DnD fuera de E2E**: spec usa el botón "Mover a stage…" (accesible + estable). DnD se valida manualmente en navegador.
+  7. **Shim dnd-kit**: rechazado, instalación real desde Claude.
+- **Security Check**: pasa.
+  - Sin secretos en código nuevo.
+  - Toasts genéricos (no filtran detalles del backend).
+  - Validación zod local en LeadFormDialog + LostLeadDialog antes de llamar API; backend revalida (createLeadSchema/updateLeadSchema/lostLeadSchema).
+  - React escapa text por defecto. `style={{borderColor, backgroundColor: \`${color}22\`}}`con`color` validado en backend con regex hex (defense-in-depth: aunque CSS injection vía property setter es bloqueada por el browser para valores inválidos).
+  - `lostReason` rendered como text plano.
+  - No file uploads.
+  - `@dnd-kit/*` paquetes oficiales del autor de react-beautiful-dnd, npm registry.
+- **Tests**: +7 frontend (39 total: 4 leads.api + 1 pipelines.api + 2 LeadFormDialog). E2E spec creada pero no se ejecuta en `pnpm test`. Total proyecto: **189 tests** (150 backend + 39 frontend).
+- **Verificación**:
+  - `pnpm lint` ✅ (3 ws)
+  - `pnpm typecheck` ✅ (3 ws)
+  - `pnpm test` ✅ 189/189
+  - `pnpm format:check` ⏳ falla por `docs/project_memory.md` + `implementation/task_tracker.md` pre-existentes (out-of-scope; deuda de formato pre-existente, no introducida en este pase).
+- **Notes**:
+  - **Validación end-to-end pendiente**: requiere docker compose up + login real para probar Kanban DnD, mover stage por botón, won/lost en el navegador.
+  - **Migración Prisma `add_contact_anonymized_at`** sigue pendiente desde UJ-03 (no bloquea).
+  - **`pnpm-lock 2.yaml` residual** sigue en raíz, sin limpiar.
+  - **Crashes de Codex en este UJ**: cero. Patrón split en sub-pases parece reducir exposición. Bug del shim dnd-kit fue por sandbox sin red, no por crash.
+
+---
+
+### 2026-04-27 — UJ-04 (Pase 1 backend): Pipelines y Leads modules
+
+- **Work Done**: Backend completo de pipelines + leads bajo patrón Claude orquestador + Codex ejecutor. Dos pases de Codex con crash silencioso al final (tras escribir el grueso); recuperación manual: árbol intacto, verificación corrida por Claude.
+  - **Pipelines module** (`backend/src/modules/pipelines/`): domain.ts (5 errores tipados), schemas.ts (zod create/update + stage), service.ts (list/getById/create/update + addStage con auto-append + updateStage con reorder transaccional + deleteStage que rechaza 409 si hay leads o si quedaría sin won/lost). 14 tests.
+  - **Leads module** (`backend/src/modules/leads/`): domain.ts (4 errores), schemas.ts (create/update/list/lost con zod), service.ts con `list` paginado + filtros (stage, owner, status, priorityMin, companyId, q OR sobre company.name + contact name/email), `getById` con include completo, `create` valida stage∈pipeline y contact∈company, `update` rechaza cambio de pipeline, `markWon`/`markLost` mueven al primer stage del kind correspondiente, `softDelete` idempotente. 15 tests.
+  - **Routes** (`backend/src/api/routes/`): pipelines.ts (6 endpoints) y leads.ts (7 endpoints) con `requireAuth` y `request.authUser`. 6 + 9 tests de integración (mocks a nivel servicio + supertest contra Fastify).
+  - **error-handler.ts** extendido: NotFound→404 (Pipeline/Stage/Lead), 409 para StageHasLeads/StageNotInPipeline/LeadCompanyMismatch/InvalidStageKind/InvalidLeadTransition, 400 para InvalidStageOrder.
+  - **server.ts**: registra pipelinesRoutes y leadsRoutes junto a companies/contacts.
+- **Files Created**: 12 archivos nuevos (10 módulos + 2 routes + tests).
+- **Files Modified**: 2 (error-handler.ts, server.ts).
+- **Decisiones**:
+  1. **No cambio de pipeline en v1**: PATCH /leads/:id rechaza con InvalidLeadTransitionError si `pipelineId` difiere del actual. Si en el futuro se permite, será una transición explícita con regeneración de stage.
+  2. **markWon/markLost mueven al primer stage del kind si no estaba en uno**: respeta `orderIndex` asc. Mantiene coherencia entre `status` y `stage.kind`.
+  3. **Authz v1 admin-only**: `requireAuth` global, sin owner-check. TODO(roles) en service para update/delete/won/lost cuando aterricen operator/viewer.
+  4. **`q` en list leads**: OR insensitive contains sobre company.name + primaryContact.firstName/lastName/email. No incluye campos del lead mismo (no hay texto libre).
+  5. **Crashes de Codex**: 2 crashes silenciosos durante la fase de edición (PIDs muertos, último log ~5min antes de detectar). El árbol quedó completo en el segundo intento; cancelado en companion y verificación corrida por Claude. No se relanzó ya que toda la salida pasó las verificaciones.
+- **Security Check**: pasa.
+  - Sin secretos.
+  - Validación zod en todos los boundaries.
+  - `requireAuth` en todas las rutas.
+  - Sin PII en logs ni mensajes de error (`lostReason` no se loggea, viaja a DB y al render).
+  - Prisma parametriza queries.
+  - Soft delete: leads borrados no aparecen en list ni getById.
+  - Authz admin-only documentada (TODO para roles futuros).
+- **Tests**: +44 backend (14 pipelines svc + 15 leads svc + 6 pipelines routes + 9 leads routes). Total backend: 150 (antes 106). Total proyecto: 182 (150 backend + 32 frontend).
+- **Verificación**:
+  - `pnpm --filter @heyday/backend run typecheck` ✅
+  - `pnpm --filter @heyday/backend run lint` ✅
+  - `pnpm --filter @heyday/backend run test` ✅ 150/150
+  - `pnpm format:check` ✅ (tras `prettier --write` sobre 5 archivos nuevos).
+- **Notes**: Migración `add_contact_anonymized_at` sigue pendiente de UJ-03 (no bloquea). Pase 2 frontend de UJ-04 (Kanban con dnd-kit + lista) queda como siguiente paso.
+
+---
+
+### 2026-04-27 — UJ-03 (Pase 2 frontend): CRUD de Contactos + anonymize
+
+- **Work Done**: Frontend completo del módulo `contacts`. Codex Pase 2 (continuando thread del Pase 1).
+  - `types/contact.ts`, `lib/api/contacts.ts` (+ test) con CRUD + `anonymizeContact`.
+  - `components/contacts/CompanyPicker.tsx` — typeahead remoto contra `/companies?q=` con TanStack Query, debounce 300ms, ARIA combobox/listbox, click-outside + Esc.
+  - `ContactFormDialog.tsx` (+ test) — form con validación zod inline, sección "Más datos" colapsable, toggle `is_primary` deshabilitado si no hay company asignada (tooltip nativo `title`).
+  - `DeleteContactDialog.tsx` y `AnonymizeContactDialog.tsx` (+ test) — esta última con doble confirmación: el botón solo se habilita si el usuario escribe literal `ANONIMIZAR`.
+  - `app/(app)/contacts/page.tsx` — lista con filtros q + is_primary, paginación, URL sync, empty states. Filtro por `company_id` omitido este pase (TODO).
+  - `app/(app)/contacts/[id]/page.tsx` — detalle con tabs Resumen/Leads (placeholder UJ-04)/Actividad (placeholder UJ-05), badge "Anonimizado", botón anonymize oculto si ya lo está, manejo de 404.
+  - `tests/e2e/contacts-crud.spec.ts` — flujo crear sin empresa → editar añadiendo empresa → marcar primary → anonimizar → verificar PII desaparece → eliminar. Crea empresa auxiliar para el flujo. Gated por env.
+- **Files Created**: 12 archivos nuevos (frontend completo del módulo + e2e).
+- **Decisiones**:
+  1. **Confirmación de anonymize**: usuario debe escribir exactamente `ANONIMIZAR` (mayúsculas) para habilitar el botón. Texto fijo, no traducido.
+  2. **Picker de empresa**: typeahead remoto, no select pre-cargado. Min 1 char, pageSize 8.
+  3. **Filtro `company_id` en lista** omitido este pase (entra en M1 cierre o UJ-04). El DTO no expone `company_name`, así que en lista/detalle se muestra `company_id` como fallback link a `/companies/:id` cuando hay valor.
+  4. **Sin tooltip dedicado**: usamos `title` nativo del browser para el toggle is_primary deshabilitado.
+- **Security Check**: ✅ no hay secretos / ✅ validación zod en form / ✅ confirmación doble irreversible / ✅ no se loggea PII en frontend / ✅ ApiError 404 con UX limpia.
+- **Tests**: 22 → 32 frontend (+10). Total proyecto: 138 tests verdes (106 backend + 32 frontend). Lint, typecheck, format:check verdes en 3 workspaces.
+- **Notes**: Migración Prisma `add_contact_anonymized_at` sigue pendiente (requiere docker compose up). Filtro company_id en lista pendiente para una iteración futura.
+
+---
+
+### 2026-04-27 — UJ-03 (Pase 1 backend): CRUD de Contactos + anonymize
+
+- **Work Done**: Backend completo del módulo `contacts` siguiendo el patrón de `companies`. Codex Pase 1 bajo orquestación Claude.
+  - Módulo `backend/src/modules/contacts/` con `schemas.ts` (zod create/update/list/dto en snake_case + `ConsentStatusSchema`), `service.ts` (`ContactsService` con list/getById/create/update/softDelete/anonymize + DI de auditService), `service.test.ts` (11 tests con FakeDb in-memory).
+  - Rutas `backend/src/api/routes/contacts.ts` con 6 endpoints (`GET list`, `POST`, `GET :id`, `PATCH :id`, `DELETE :id`, `POST :id/anonymize`) bajo `requireAuth`, registradas en `server.ts`. 6 routes tests.
+  - Errores de dominio `ContactNotFoundError`, `ContactPrimaryConflictError`, `ContactCompanyNotFoundError` mapeados en `error-handler.ts`.
+  - Schema Prisma: añadido campo `anonymizedAt DateTime? @map("anonymized_at")` en modelo Contact (cliente regenerado, migración pendiente — requiere docker compose arriba).
+- **Files Created/Modified**:
+  - Backend nuevos: `modules/contacts/{schemas,service,service.test,index}.ts`, `api/routes/contacts.ts`, `api/routes/contacts.test.ts`
+  - Backend modificados: `api/server.ts` (+1 import + 1 register), `api/plugins/error-handler.ts` (+3 errors), `prisma/schema.prisma` (+anonymizedAt)
+- **Decisiones**:
+  1. **Anonymize**: irreversible. Reemplaza `firstName='Anonymized'`, `lastName='#<últimos 6 chars del cuid>'`, todos los campos PII a null, `consentStatus='revoked'`, set `anonymizedAt`. Audit log con metadata SIN PII (solo flags `had_email`/`had_phone`/`had_company`). Idempotente: 404 si ya anonimizado.
+  2. **`is_primary` único por empresa**: auto-desmarca cualquier otro primario activo dentro de transacción Prisma (en create y en update). `ContactPrimaryConflictError` definido pero no se lanza con esta política — dead code menor, se puede limpiar.
+  3. **Contacto sin empresa permitido** (`company_id` nullable). `softDelete` también pone `isPrimary=false`.
+- **Security Check**: ✅ auth en todas las rutas / ✅ no hay PII en metadata de audit / ✅ validación zod / ✅ queries Prisma parametrizadas / ✅ anonymize en transacción atómica con audit log.
+- **Tests**: 89 → 106 (+17 tests backend). Lint, typecheck, format:check verdes en los 3 workspaces.
+- **Notes**: Migración Prisma pendiente — ejecutar `pnpm --filter @heyday/backend exec prisma migrate dev --name add_contact_anonymized_at` cuando docker compose esté arriba.
+
+---
+
+### 2026-04-27 — UJ-02: CRUD de Empresas
+
+- **Work Done**: Implementación completa M1 del CRUD de Empresas, primer UJ ejecutado bajo el patrón Claude-orquestador / Codex-ejecutor (formalizado en CLAUDE.md durante esta sesión).
+  - **Backend** (Codex Pase 1): módulo `backend/src/modules/companies/` con `domain.ts` (normalizeDomain), `schemas.ts` (zod create/update/list/dto en snake_case), `service.ts` (CompaniesService con dedupe por dominio + soft delete + DTO mapper) y `service.test.ts` (9 tests con FakeDb mock siguiendo patrón `auth/credentials`). Rutas `backend/src/api/routes/companies.ts` con 5 endpoints (`GET list`, `POST`, `GET :id`, `PATCH :id`, `DELETE :id`) bajo `requireAuth`, registradas en `server.ts`. Errores `CompanyDomainConflictError` (409 con `existing_id`) y `CompanyNotFoundError` (404) mapeados en `error-handler.ts`; `ERROR_CODES.COMPANY_DOMAIN_CONFLICT` añadido en `shared`. 7 routes tests adicionales (`vi.mock` del service para aislar el HTTP layer).
+  - **Frontend** (Codex Pase 2): `lib/api/companies.ts` (CRUD + helper `isCompanyDomainConflict`), `types/company.ts`, primitives `Modal.tsx` (focus trap + Esc + click-outside + aria-modal) y `Tabs.tsx` (controlled, ARIA correcto). `CompanyFormDialog.tsx` (form `useState`+zod, sección colapsable "Más datos", manejo 409 con toast linkable a la empresa existente). `DeleteCompanyDialog.tsx`. Lista `/companies` con filtros debounced 300ms (q/icp_vertical/city) sincronizados a URL via `useSearchParams`, paginación, `useQuery` con invalidación. Detalle `/companies/[id]` con 4 tabs (Overview real, Contactos/Leads/Actividad placeholder hasta UJ-03/04/05). Playwright spec `tests/e2e/companies-crud.spec.ts` gated por `E2E_USER_EMAIL/PASSWORD`.
+- **Files Created/Modified**:
+  - Backend nuevos: `modules/companies/{domain,schemas,service,service.test,index}.ts`, `api/routes/companies.ts`, `api/routes/companies.test.ts`
+  - Backend modificados: `api/server.ts` (+1 import + 1 register), `api/plugins/error-handler.ts` (+2 errors + 1 import), `shared/src/constants/index.ts` (+COMPANY_DOMAIN_CONFLICT)
+  - Frontend nuevos: `lib/api/companies.ts`, `lib/api/companies.test.ts`, `types/company.ts`, `components/Modal.tsx`, `components/Tabs.tsx`, `components/companies/{CompanyFormDialog,CompanyFormDialog.test,DeleteCompanyDialog}.tsx`, `app/(app)/companies/page.tsx`, `app/(app)/companies/[id]/page.tsx`, `tests/e2e/companies-crud.spec.ts`
+  - Otros: `CLAUDE.md` (regla #9 + sección Codex Orchestration), `implementation/task_tracker.md` (UJ-02 → completed)
+- **Decisiones**:
+  1. **Soft-delete libera el dominio** del row (`deletedAt: now, domain: null`) para permitir recrear sin chocar con `@unique`. Alternativa rechazada: índice parcial condicional.
+  2. **`update` solo re-chequea conflicto si pasas `domain` explícito**, no si solo cambias `website`. Tolerable porque el form siempre envía `domain` explícito.
+  3. **Routes test reimplementa el service en `vi.mock`** en vez de usar el real. Aísla el HTTP layer pero la lógica re-pegada puede divergir; flag para futuras refactorizaciones.
+  4. **Filtros `tag` y `priority_*` excluidos del schema M1** (hasta UJ-04/UJ-06) — el endpoint no acepta lo que no implementa.
+  5. **Counts de pain_points y service_recommendations omitidos** en `GET /companies/:id` hasta M4 (api_contracts los promete pero no hay datos hasta entonces).
+  6. **Sort default `updated_at_desc`** como único valor permitido en M1.
+  7. Sobre la deviación durante Pase 1: Codex pivotó tests a FakeDb tras un fallo de Postgres en su sandbox; verificación posterior confirmó que era el patrón existente del repo, no una regresión.
+- **Security Check**: PASS con un fix añadido por Claude en review.
+  - [x] Sin secretos hardcoded
+  - [x] `requireAuth` en los 5 endpoints
+  - [x] Zod input validation en body/query/params
+  - [x] Prisma → SQL parametrizado
+  - [x] DTO mapper omite `deleted_at` (no leak)
+  - [x] **Fix XSS aplicado**: `safeHttpUrl()` en detalle filtra schemes peligrosos (`javascript:` etc.) antes de renderizar `website`/`linkedin_url` como `<a href>`. Defense-in-depth porque zod `.url()` acepta cualquier scheme válido.
+  - [x] Sin nuevas dependencias
+- **Tests**: 89 backend (73 → 89, +16) y 22 frontend (14 → 22, +8). Total 111 tests verdes. typecheck + lint + tests pass en backend y frontend.
+- **Notes**:
+  - **Codex crash en Pase 1**: Codex se congeló silenciosamente tras los tests verdes. Detectado por monitorización del companion (`updatedAt` sin avanzar tras `Command completed`). PID muerto, working tree intacto. Revisión y verificación manual confirmaron que el trabajo era bueno. Esta experiencia motivó la sección "Codex Orchestration" en CLAUDE.md.
+  - **Pase 2 cerró limpio** en ~11 min sin incidencias gracias a prompt más específico (paths concretos, constraints duras "no instalar deps", referencia explícita a patrones existentes).
+  - **Pendiente operativo**: Playwright spec `companies-crud.spec.ts` no se ha ejecutado contra docker compose todavía — requiere seed demo y env `E2E_USER_*` configurados. Próxima sesión.
+  - **`pnpm-lock 2.yaml` untracked sigue residual** — investigar y limpiar en una sesión futura.
+
 ## Log
 
 ### 2026-04-26 — UJ-01: Login y sesión persistente

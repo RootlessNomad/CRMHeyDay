@@ -10,6 +10,15 @@
 //   - ContactNotFoundError        → 404 NOT_FOUND
 //   - ContactPrimaryConflictError → 409 VALIDATION_ERROR
 //   - ContactCompanyNotFoundError → 404 NOT_FOUND
+//   - PipelineNotFoundError       → 404 NOT_FOUND
+//   - StageNotFoundError          → 404 NOT_FOUND
+//   - StageHasLeadsError          → 409 VALIDATION_ERROR
+//   - InvalidStageKindError       → 409 VALIDATION_ERROR
+//   - InvalidStageOrderError      → 400 VALIDATION_ERROR
+//   - LeadNotFoundError           → 404 NOT_FOUND
+//   - LeadCompanyMismatchError    → 409 VALIDATION_ERROR
+//   - StageNotInPipelineError     → 409 VALIDATION_ERROR
+//   - InvalidLeadTransitionError  → 409 VALIDATION_ERROR
 //   - CredentialNotFoundError     → 404 NOT_FOUND
 //   - JobNotFoundError            → 404 NOT_FOUND
 //   - CredentialConflictError     → 409 VALIDATION_ERROR
@@ -36,6 +45,19 @@ import {
   ContactNotFoundError,
   ContactPrimaryConflictError,
 } from '../../modules/contacts/service.js';
+import {
+  InvalidLeadTransitionError,
+  LeadCompanyMismatchError,
+  LeadNotFoundError,
+  StageNotInPipelineError,
+} from '../../modules/leads/index.js';
+import {
+  InvalidStageKindError,
+  InvalidStageOrderError,
+  PipelineNotFoundError,
+  StageHasLeadsError,
+  StageNotFoundError,
+} from '../../modules/pipelines/index.js';
 import {
   CredentialConflictError,
   CredentialNotFoundError,
@@ -87,14 +109,28 @@ export function registerErrorHandler(app: FastifyInstance): void {
       err instanceof CompanyNotFoundError ||
       err instanceof ContactNotFoundError ||
       err instanceof ContactCompanyNotFoundError ||
+      err instanceof PipelineNotFoundError ||
+      err instanceof StageNotFoundError ||
+      err instanceof LeadNotFoundError ||
       err instanceof CredentialNotFoundError ||
       err instanceof JobNotFoundError
     ) {
       return send(reply, 404, { code: ERROR_CODES.NOT_FOUND, message: err.message });
     }
 
-    if (err instanceof ContactPrimaryConflictError) {
+    if (
+      err instanceof ContactPrimaryConflictError ||
+      err instanceof StageHasLeadsError ||
+      err instanceof LeadCompanyMismatchError ||
+      err instanceof StageNotInPipelineError ||
+      err instanceof InvalidStageKindError ||
+      err instanceof InvalidLeadTransitionError
+    ) {
       return send(reply, 409, { code: ERROR_CODES.VALIDATION_ERROR, message: err.message });
+    }
+
+    if (err instanceof InvalidStageOrderError) {
+      return send(reply, 400, { code: ERROR_CODES.VALIDATION_ERROR, message: err.message });
     }
 
     if (err instanceof CredentialConflictError) {

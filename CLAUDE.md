@@ -16,6 +16,7 @@ This file is your operating manual. Every rule you must follow is here. There ar
 6. **Scope control**: Build what the user requested. If adding something "because it seems useful" → stop and ask.
 7. **Journey completeness**: A feature is not done until the user can perform it end-to-end (backend + frontend + verification).
 8. **Document as you work**: Update task_tracker and work_log after each task. Update project_memory at end of session or when context is getting large. Not later. Not in batches.
+9. **Codex co-pilot pattern**: Claude is the orchestrator; Codex (`/codex:rescue`) is the executor. Claude plans, prompts, reviews, verifies, and documents. Codex implements. Never let Codex run unsupervised — see the Codex Orchestration section below.
 
 ## Identity
 
@@ -91,6 +92,56 @@ Update `docs/project_memory.md` with:
 - Next task/journey to work on
 - Open blockers or pending decisions
 - Key files recently created or modified
+
+## Codex Orchestration
+
+Default execution model since UJ-02. Claude is the orchestrator and reviewer; Codex (`/codex:rescue`) is the executor. This is not optional — every implementation task uses this pattern unless the user says otherwise.
+
+### Roles
+
+- **Claude** (this agent): Reads design docs. Drafts the plan. Asks clarifying questions. Writes the Codex prompt. Monitors execution. Reviews the diff. Runs lint/typecheck/tests. Applies the security checklist. Updates docs.
+- **Codex**: Implements code + tests against a tightly-scoped prompt. Does not decide architecture. Does not extend scope.
+
+### Before launching Codex
+
+1. **Plan first**, get user approval (Rule 1). Never send Codex a prompt without an approved plan.
+2. **Explore the real repo state**: existing patterns in neighboring modules, installed dependencies, file paths, test conventions. Codex starts cold and will guess wrong if you don't give it concrete anchors.
+3. **Split large tasks into short passes** (typically 2–3): e.g. backend + frontend of a UJ are separate Codex passes. Smaller passes mean less time exposed to crashes and a review checkpoint between steps.
+4. **Constraints in the prompt** must be explicit: which files to create/modify (full paths), which deps are forbidden, which patterns to mirror, what "done" looks like (lint/typecheck/test commands).
+5. **Reporting contract**: ask Codex to return (a) files touched, (b) test count delta, (c) any deviations from spec, (d) short snippets you can eyeball.
+
+### Monitoring Codex (mandatory)
+
+Codex can crash silently after a long-running task and leave the companion stuck reporting `running` indefinitely. Always monitor.
+
+- **Cadence**: check status every 3–5 minutes. Don't fire-and-forget.
+- **Status command**:
+  ```
+  node "/Users/<user>/.claude/plugins/cache/openai-codex/codex/<ver>/scripts/codex-companion.mjs" status --json
+  ```
+- **Stuck signal**: `updatedAt` does not advance for >5 min after a `Command completed` event in `progressPreview`, especially when `phase` is `verifying`.
+- **When stuck**:
+  1. Tail the job log file (path is in the status JSON under `logFile`).
+  2. Check the PID with `ps -p <pid>` — if dead, the process crashed.
+  3. If dead, cancel via `codex-companion.mjs cancel <task-id>`. The work in the working tree is usually intact — Codex tends to crash while composing the final report, not during edits.
+  4. Review the diff manually, run the verification commands yourself, decide if the work is acceptable.
+
+### Reviewing Codex's work
+
+Even when Codex reports success, Claude verifies independently:
+
+- Re-read the diff. Trust nothing.
+- Run lint, typecheck, tests yourself.
+- Check that the changes match the spec — especially deviations Codex flagged.
+- Apply the per-task security checklist.
+- If the work is acceptable, move on. If not, send a precise follow-up prompt with the gap.
+
+### When NOT to use Codex
+
+- Trivial single-file edits (Claude does it directly).
+- Doc updates, task_tracker, project_memory.
+- Decisions that require user input.
+- When the plan is unclear — fix the plan first.
 
 ## Context Management
 
