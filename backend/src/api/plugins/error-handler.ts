@@ -5,6 +5,8 @@
 //   - ZodError                    → 400 VALIDATION_ERROR + issues
 //   - AuthError                   → statusCode del error + code
 //   - InvalidJobPayloadError      → 400 VALIDATION_ERROR
+//   - CompanyDomainConflictError  → 409 COMPANY_DOMAIN_CONFLICT
+//   - CompanyNotFoundError        → 404 NOT_FOUND
 //   - CredentialNotFoundError     → 404 NOT_FOUND
 //   - JobNotFoundError            → 404 NOT_FOUND
 //   - CredentialConflictError     → 409 VALIDATION_ERROR
@@ -22,6 +24,10 @@ import { AnthropicError } from '../../core/ai/errors.js';
 import { AuthError } from '../../core/auth/errors.js';
 import { SecretNotConfiguredError } from '../../core/config/secrets.js';
 import { InvalidJobPayloadError } from '../../core/queue/types.js';
+import {
+  CompanyDomainConflictError,
+  CompanyNotFoundError,
+} from '../../modules/companies/service.js';
 import {
   CredentialConflictError,
   CredentialNotFoundError,
@@ -61,7 +67,19 @@ export function registerErrorHandler(app: FastifyInstance): void {
       });
     }
 
-    if (err instanceof CredentialNotFoundError || err instanceof JobNotFoundError) {
+    if (err instanceof CompanyDomainConflictError) {
+      return send(reply, 409, {
+        code: 'COMPANY_DOMAIN_CONFLICT',
+        message: err.message,
+        details: { existing_id: err.existingId },
+      });
+    }
+
+    if (
+      err instanceof CompanyNotFoundError ||
+      err instanceof CredentialNotFoundError ||
+      err instanceof JobNotFoundError
+    ) {
       return send(reply, 404, { code: ERROR_CODES.NOT_FOUND, message: err.message });
     }
 
