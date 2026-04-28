@@ -318,6 +318,7 @@ model Contact {
   createdById   String        @map("created_by_id")
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  anonymizedAt  DateTime?     @map("anonymized_at") @db.Timestamptz(6)
   deletedAt     DateTime?     @map("deleted_at") @db.Timestamptz(6)
 
   company      Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)

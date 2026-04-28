@@ -7,6 +7,9 @@
 //   - InvalidJobPayloadError      → 400 VALIDATION_ERROR
 //   - CompanyDomainConflictError  → 409 COMPANY_DOMAIN_CONFLICT
 //   - CompanyNotFoundError        → 404 NOT_FOUND
+//   - ContactNotFoundError        → 404 NOT_FOUND
+//   - ContactPrimaryConflictError → 409 VALIDATION_ERROR
+//   - ContactCompanyNotFoundError → 404 NOT_FOUND
 //   - CredentialNotFoundError     → 404 NOT_FOUND
 //   - JobNotFoundError            → 404 NOT_FOUND
 //   - CredentialConflictError     → 409 VALIDATION_ERROR
@@ -28,6 +31,11 @@ import {
   CompanyDomainConflictError,
   CompanyNotFoundError,
 } from '../../modules/companies/service.js';
+import {
+  ContactCompanyNotFoundError,
+  ContactNotFoundError,
+  ContactPrimaryConflictError,
+} from '../../modules/contacts/service.js';
 import {
   CredentialConflictError,
   CredentialNotFoundError,
@@ -77,10 +85,16 @@ export function registerErrorHandler(app: FastifyInstance): void {
 
     if (
       err instanceof CompanyNotFoundError ||
+      err instanceof ContactNotFoundError ||
+      err instanceof ContactCompanyNotFoundError ||
       err instanceof CredentialNotFoundError ||
       err instanceof JobNotFoundError
     ) {
       return send(reply, 404, { code: ERROR_CODES.NOT_FOUND, message: err.message });
+    }
+
+    if (err instanceof ContactPrimaryConflictError) {
+      return send(reply, 409, { code: ERROR_CODES.VALIDATION_ERROR, message: err.message });
     }
 
     if (err instanceof CredentialConflictError) {
