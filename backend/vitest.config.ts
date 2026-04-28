@@ -15,6 +15,9 @@ export default defineConfig({
     exclude: ['node_modules', 'dist'],
     clearMocks: true,
     restoreMocks: true,
+    // bcrypt cost 12 puede tardar >5s bajo CPU contention (suite paralela);
+    // los tests de auth/password e integración Fastify hacen hashing real.
+    testTimeout: 15000,
   },
   resolve: {
     alias: {

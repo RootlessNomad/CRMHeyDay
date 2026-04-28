@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useState, type CSSProperties } from 'react';
 
+import { ActivityFeed } from '@/components/activities/ActivityFeed';
 import { Tabs, TabsList, TabsPanel, TabsTrigger } from '@/components/Tabs';
 import { DeleteLeadDialog } from '@/components/leads/DeleteLeadDialog';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
@@ -238,10 +239,7 @@ export default function LeadDetailPage(): JSX.Element {
           </TabsPanel>
 
           <TabsPanel value="activity">
-            <div className="border-border bg-surface-muted rounded-lg border p-8 text-center shadow-sm">
-              <h2 className="text-lg font-semibold">Actividad</h2>
-              <p className="text-text-muted mt-1 text-sm">Disponible en UJ-05</p>
-            </div>
+            <ActivityFeed entityType="lead" entityId={lead.id} />
           </TabsPanel>
         </Tabs>
       </div>

@@ -7,6 +7,8 @@
 //   - InvalidJobPayloadError      → 400 VALIDATION_ERROR
 //   - CompanyDomainConflictError  → 409 COMPANY_DOMAIN_CONFLICT
 //   - CompanyNotFoundError        → 404 NOT_FOUND
+//   - ActivityNotFoundError       → 404 NOT_FOUND
+//   - ActivityEntityNotFoundError → 404 NOT_FOUND
 //   - ContactNotFoundError        → 404 NOT_FOUND
 //   - ContactPrimaryConflictError → 409 VALIDATION_ERROR
 //   - ContactCompanyNotFoundError → 404 NOT_FOUND
@@ -36,6 +38,10 @@ import { AnthropicError } from '../../core/ai/errors.js';
 import { AuthError } from '../../core/auth/errors.js';
 import { SecretNotConfiguredError } from '../../core/config/secrets.js';
 import { InvalidJobPayloadError } from '../../core/queue/types.js';
+import {
+  ActivityEntityNotFoundError,
+  ActivityNotFoundError,
+} from '../../modules/activities/service.js';
 import {
   CompanyDomainConflictError,
   CompanyNotFoundError,
@@ -107,6 +113,8 @@ export function registerErrorHandler(app: FastifyInstance): void {
 
     if (
       err instanceof CompanyNotFoundError ||
+      err instanceof ActivityNotFoundError ||
+      err instanceof ActivityEntityNotFoundError ||
       err instanceof ContactNotFoundError ||
       err instanceof ContactCompanyNotFoundError ||
       err instanceof PipelineNotFoundError ||

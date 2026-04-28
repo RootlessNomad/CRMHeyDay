@@ -26,6 +26,7 @@ import { rootLogger } from '../core/observability/logger.js';
 import { redis } from '../core/queue/connection.js';
 import authPlugin from './plugins/auth.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
+import { registerActivitiesRoutes } from './routes/activities.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerCompaniesRoutes } from './routes/companies.js';
 import { registerContactsRoutes } from './routes/contacts.js';
@@ -107,6 +108,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await registerContactsRoutes(app);
   await registerPipelinesRoutes(app);
   await registerLeadsRoutes(app);
+  await registerActivitiesRoutes(app);
   await registerJobsRoutes(app);
 
   // ---- Error handler (al final, tras las rutas)

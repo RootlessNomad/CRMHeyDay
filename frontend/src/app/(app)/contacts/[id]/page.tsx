@@ -1,13 +1,14 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Target } from 'lucide-react';
+import { Target } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { ActivityFeed } from '@/components/activities/ActivityFeed';
 import { Tabs, TabsList, TabsPanel, TabsTrigger } from '@/components/Tabs';
 import { AnonymizeContactDialog } from '@/components/contacts/AnonymizeContactDialog';
 import { ContactFormDialog } from '@/components/contacts/ContactFormDialog';
@@ -336,11 +337,7 @@ export default function ContactDetailPage(): JSX.Element {
         </TabsPanel>
 
         <TabsPanel value="activity">
-          <PlaceholderTab
-            icon={Activity}
-            title="Actividad pendiente"
-            subtitle="Próximamente UJ-05."
-          />
+          <ActivityFeed entityType="contact" entityId={contact.id} />
         </TabsPanel>
       </Tabs>
 

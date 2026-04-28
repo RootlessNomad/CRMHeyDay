@@ -3,9 +3,9 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: M0 cerrado + M1 en marcha (4/6 UJ — UJ-04 ✅ completed).
-- **Last Completed**: **UJ-04 completo (backend + frontend)** — Pase 2 frontend dividido en 2A (tipos + API clients + 4 dialogs, +7 tests) y 2B (KanbanBoard `@dnd-kit/core` + LeadList + páginas `/leads` y `/leads/[id]` + spec E2E gated). Bug crítico de sandbox Codex mitigado: Codex creó shim `dnd-kit.d.ts` por falta de red al registro npm; Claude instaló deps reales y eliminó shim. Cleanup inline: campo `title` huérfano del LeadFormDialog quitado por Claude. 189 tests (150 backend + 39 frontend). Cero crashes de Codex en este UJ.
-- **Next Step**: **UJ-05 Activities polimórficas** — modelo polimórfico de actividades sobre Lead/Company/Contact (call/note/email/whatsapp/meeting), feed unificado en cada detalle, integración con tab "Actividad" placeholder ya existente en `/leads/[id]` y `/contacts/[id]`. Backend module `activities` + endpoints `/activities` con filtro por entidad → frontend feed component reutilizable.
+- **Phase**: M0 cerrado + M1 en marcha (5/6 UJ — UJ-05 ✅ completed).
+- **Last Completed**: **UJ-05 completo (backend + frontend)** — Plan A sin migración (Activity ya estaba en schema con polimorfismo `(entity_type, entity_id)`). Pase 1 backend (Codex 21m 58s): módulo `activities` siguiendo patrón `contacts`, anti-huérfano valida `deletedAt: null` en company/lead y `+ anonymizedAt: null` en contact, audit log sin PII, 4 endpoints con `requireAuth`. Pase 2 frontend (Codex 6m 32s): ActivityFeed reutilizable con filtros (kind/completed/mine) + react-query, ActivityFormDialog con zod + datetime-local↔ISO, DeleteActivityDialog; integrados en tabs "Actividad" de /leads/[id], /contacts/[id] y /companies/[id]. **Review crítica**: Codex Pase 1 introdujo dynamic imports en routes/activities.ts como workaround a timeouts del suite — Claude corrigió a static import (patrón de contacts) y atacó la causa raíz: `testTimeout: 15000ms` en backend/vitest.config.ts (bcrypt cost 12 + 21 tests adicionales saturaba CPU bajo paralelismo). 189 → 218 tests (+29). Cero crashes de Codex en este UJ.
+- **Next Step**: **UJ-06 Tags y búsqueda global** — sistema de tags polimórfico (model `Tag` con `entity_type` taxonomy, ya existe en schema) + búsqueda global (CMD+K palette o similar) sobre Companies/Contacts/Leads/Activities. Backend `/tags` CRUD + `/search?q=` con scoring. Frontend: `TagPicker` reutilizable, integración en formularios existentes (Company/Contact/Lead/Activity). Tras cerrar UJ-06, correr `/review` del milestone M1.
 
 ## Estado verificable
 
@@ -14,7 +14,7 @@
 | `pnpm format:check` (root)   |   ✅   |
 | `pnpm lint` (root)           |   ✅   |
 | `pnpm typecheck` (3 ws)      |   ✅   |
-| `pnpm test` (189 tests)      |   ✅   |
+| `pnpm test` (218 tests)      |   ✅   |
 | Repo `.git` inicializado     |   ✅   |
 | CI GitHub Actions definido   |   ✅   |
 | Seed demo type-clean         |   ✅   |
@@ -63,7 +63,7 @@ M1–M5 (27 UJ) sin empezar.
 | UJ-02 CRUD Empresas               | ✅ completed |
 | UJ-03 CRUD Contactos + anonymize  | ✅ completed |
 | UJ-04 Pipelines y Kanban de Leads | ✅ completed |
-| UJ-05 Activities polimórficas     | pending      |
+| UJ-05 Activities polimórficas     | ✅ completed |
 | UJ-06 Tags y búsqueda global      | pending      |
 
 ## Deuda específica UJ-03
@@ -93,18 +93,25 @@ Ver `docs/decision_log.md` (11 decisiones de Planning) y entradas relevantes del
 3. `docker compose up -d db redis` antes de cualquier `pnpm db:*`.
 4. `pnpm install` con Node 20 + pnpm 9.
 
+## Deuda específica UJ-05
+
+- **Validación end-to-end en navegador pendiente**: crear/editar/borrar/togglear actividades en `/leads/[id]`, `/contacts/[id]` y `/companies/[id]` requiere docker compose up + login. Tests con prisma mocked (Pase 1) y vitest sobre dialog (Pase 2) pasan, pero no hay round-trip real contra Postgres + UI.
+- **`whatsapp` no existe en `ActivityKind`**: decisión consciente del Plan A (los enums son no-editables hasta UJ-13 Taxonomías editables en M3). Si el usuario lo necesita antes, requiere migración nueva en su propio task.
+- **Sin endpoint dedicado `/complete`**: completar/descompletar via PATCH con `completed_at`. Si más adelante se quiere telemetría de "tarea hecha" como evento separado, considerar endpoint dedicado.
+- **Sin filtros UI por rango de fechas**: backend ya soporta `due_from/to`; UI v1 expone solo kind + pending/all/completed + mine/all. Añadir si emerge demanda real.
+- **Sin spec Playwright E2E para activities**: a diferencia de UJ-02/03/04 no se añadió spec gated por env. Considerar para `/review` de M1.
+- **Lección aprendida (review crítica)**: Codex puede introducir workarounds que parecen razonables pero ocultan causas raíz. En este UJ fue dynamic import en `routes/activities.ts` "para evitar timeouts del suite" — la causa real era `testTimeout: 5000ms` insuficiente bajo CPU contention con bcrypt cost 12. Patrón a recordar: **si Codex menciona "lazy load", "diferido", "para evitar X bajo paralelismo" o similar, verificar la causa raíz antes de aceptar**.
+
 ## Pasos para la siguiente sesión
 
 1. `/session-start`
-2. **Arrancar UJ-05 Activities polimórficas** bajo patrón Claude+Codex. Alcance esperado:
-   - Backend module `activities` (`backend/src/modules/activities/`) con polimorfismo sobre Lead/Company/Contact, kinds: call/note/email/whatsapp/meeting (taxonomía editable en M3). Endpoints: `GET /activities?entity_type=&entity_id=`, `POST /activities`, `PATCH /activities/:id`, `DELETE /activities/:id` (soft).
-   - Schema Prisma: tabla `activities` con `(entity_type enum, entity_id uuid)` polimórfica + `due_at`, `completed_at`, `outcome`, `body`. Migración nueva.
-   - Frontend: `lib/api/activities.ts`, `components/activities/ActivityFeed.tsx` reutilizable (props `{ entityType, entityId }`), `ActivityFormDialog.tsx`.
-   - Integración: tab "Actividad" en `/leads/[id]`, `/contacts/[id]`, `/companies/[id]` (los dos primeros ya tienen el placeholder).
-3. **Aún pendiente operativo** (no bloquea UJ-05):
-   - Validar UJ-04 en navegador: docker compose up + login + probar Kanban DnD, "Mover a stage…", Won/Lost, filtros URL-synced.
+2. **Arrancar UJ-06 Tags y búsqueda global** bajo patrón Claude+Codex. Alcance esperado:
+   - Backend module `tags` (model `Tag` ya existe en schema con `TaggableEntityType` enum). Endpoints CRUD `/tags` + asignación polimórfica + `GET /search?q=` con scoring sobre Companies/Contacts/Leads/Activities (titles + bodies).
+   - Frontend: `TagPicker` reutilizable (typeahead + create-on-the-fly), integración en formularios existentes (Company/Contact/Lead/Activity) en su sección "Más datos". CMD+K palette o `<GlobalSearch />` en Topbar.
+   - Tras cerrar UJ-06: `/review` del milestone M1.
+3. **Aún pendiente operativo** (no bloquea UJ-06):
+   - Validar UJ-04 + UJ-05 en navegador: docker compose up + login + probar Kanban DnD + ActivityFeed CRUD en los tres detalles + filtros URL-synced.
    - Migración Prisma `add_contact_anonymized_at` (deuda UJ-03).
    - Validar seed demo + Playwright specs existentes (login + companies-crud + contacts-crud + leads-crud) con env `E2E_USER_*`.
    - Conectar el repo a GitHub (`git remote add origin <url>` + `git push -u origin main`) para activar CI.
    - Limpiar `pnpm-lock 2.yaml` residual en raíz.
-   - **Tras cerrar M1 (UJ-05 + UJ-06)**: correr `/review` del milestone.

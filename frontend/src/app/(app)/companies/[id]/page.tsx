@@ -1,12 +1,13 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Target, Users } from 'lucide-react';
+import { Target, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { ActivityFeed } from '@/components/activities/ActivityFeed';
 import { CompanyFormDialog } from '@/components/companies/CompanyFormDialog';
 import { DeleteCompanyDialog } from '@/components/companies/DeleteCompanyDialog';
 import { Tabs, TabsList, TabsPanel, TabsTrigger } from '@/components/Tabs';
@@ -321,11 +322,7 @@ export default function CompanyDetailPage(): JSX.Element {
         </TabsPanel>
 
         <TabsPanel value="activity">
-          <PlaceholderTab
-            icon={Activity}
-            title="Actividad pendiente"
-            subtitle="Disponible al completar UJ-05."
-          />
+          <ActivityFeed entityType="company" entityId={company.id} />
         </TabsPanel>
       </Tabs>
 
