@@ -15,6 +15,30 @@ Chronological record of all meaningful work. Each entry covers one infrastructur
 
 ---
 
+### 2026-04-28 — UJ-06: Tags polimórficas y búsqueda global (backend + frontend)
+
+- **Work Done**: UJ-06 cerrado completo bajo patrón Claude orquestador + Codex ejecutor en 3 pases. **Mini-pase 1.1 (backend, Claude directo)**: extender `/search` para incluir activities. `searchAll` añade un 4º query sobre `Activity` (match por `title` + `body`), recoge `entityIds` por tipo y hace 3 queries en paralelo para verificar parent-alive (`company.deletedAt:null`, `contact.deletedAt:null + anonymizedAt:null + companyId null|company alive`, `lead.deletedAt:null + company.deletedAt:null`). Filtra activities huérfanas, mapea hits con `subtitle = "${kind} · ${parentLabel}"`, fallback `'(sin título)'` para activities sin title. **Pase 2A (frontend, Codex)**: `lib/api/tags.ts` con 8 funciones + helpers `isTagNameConflict`/`isTagAssignmentConflict` (usa `error.message.includes` no `.startsWith` tras corrección de Claude — el mensaje backend es `La tag "..." ya está asignada...`, no empieza con `ya está asignada`). `lib/api/search.ts` con tipos `SearchHit`/`SearchResults`. `TagBadge.tsx` (pill con color hex validado backend → inline style; sin color → clases neutras) y `TagPicker.tsx` (typeahead debounced 300ms, create-on-the-fly con selector de `kind`, chip removal, react-query mutations con invalidación correcta, navegación por teclado ARIA combobox). Integración en sección "Tags" de `CompanyFormDialog`/`ContactFormDialog`/`LeadFormDialog` (NO en `ActivityFormDialog` — el enum `TaggableEntityType` backend no incluye `'activity'`). En modo create (sin entityId) renderiza hint "Guarda primero para añadir tags." en vez de input. **Pase 2B (frontend, Codex)**: `<GlobalSearch />` palette flotante usando `<Modal />` existente, atajo `Cmd/Ctrl+K` global en Topbar (reemplaza el `<input disabled>` placeholder por `<button>` con `<kbd>⌘K</kbd>`), debounce 300ms, navegación por teclado plana sobre todos los hits agrupados por sección, mapeo a detalle: company→`/companies/:id`, contact→`/contacts/:id`, lead→`/leads/:id`, activity→toast "Las actividades se editan desde la pestaña Actividad…" (no hay detail page propio).
+- **Files Created/Modified**:
+  - **Backend (mini-pase 1.1)**: `backend/src/modules/search/{schemas.ts,service.ts,service.test.ts}` (extendidos: 6→10 service tests). `backend/src/api/routes/search.test.ts` (mock incluye activities). El Pase 1 backend de Codex (módulo `tags` + `search` inicial) ya estaba en working tree de la sesión previa: `backend/src/modules/tags/{schemas.ts,service.ts,index.ts,service.test.ts}` (16 tests), `backend/src/modules/search/{schemas.ts,service.ts,index.ts,service.test.ts}` (6 tests originales), `backend/src/api/routes/{tags,search}.{ts,test.ts}` (8+4 tests), `backend/src/api/server.ts` (registra rutas), `backend/src/api/plugins/error-handler.ts` (4 mappings nuevos: `Tag{Not,AssignmentEntity}FoundError → 404`, `Tag{Name,Assignment}ConflictError → 409`).
+  - **Frontend (Pase 2A)**: `frontend/src/types/tag.ts`, `frontend/src/lib/api/{tags,search}.ts`, `frontend/src/components/tags/{TagBadge.tsx,TagBadge.test.tsx,TagPicker.tsx,TagPicker.test.tsx}` (2+6 tests). Modificados: `frontend/src/components/companies/CompanyFormDialog.tsx`, `frontend/src/components/contacts/ContactFormDialog.tsx`, `frontend/src/components/leads/LeadFormDialog.tsx` (sección Tags). `frontend/src/components/companies/CompanyFormDialog.test.tsx` (envuelve en QueryClientProvider por dependencia transitiva del TagPicker).
+  - **Frontend (Pase 2B)**: `frontend/src/components/{GlobalSearch.tsx,GlobalSearch.test.tsx}` (4 tests). Modificado: `frontend/src/components/Topbar.tsx` (botón abre palette + listener ⌘K).
+- **Decisiones**:
+  1. **Activities NO son taggables**: el enum `TaggableEntityType` del backend incluye `company|contact|lead|content_item` pero no `activity`. Decisión consciente del schema original; mantener consistencia. `TagPicker` solo se integra en 3 dialogs, no 4.
+  2. **`content_item` taggable pero TODO(M5)**: schema lo permite, service lanza `TagAssignmentEntityNotFoundError` con comentario explícito hasta que aterrice el módulo en M5.
+  3. **Activities NO tienen detail page**: en M1 se editan desde tabs "Actividad" del padre. `GlobalSearch` muestra toast informativo en vez de navegar; deuda explícita hasta que se decida UX (no hay deep-link por ahora). Backend search hit no devuelve `entity_type`/`entity_id` del padre — añadirlo está fuera de scope.
+  4. **Helper `isTagAssignmentConflict` con `.includes` no `.startsWith`**: el backend lanza `La tag "${id}" ya está asignada a "${type}" con id "${id}"`. Codex inicialmente puso `.startsWith('ya está asignada')` que jamás matcheaba. Claude detectó en review pre-commit y corrigió.
+  5. **`useDebouncedValue` duplicado** en `CompanyPicker.tsx`, `TagPicker.tsx`, `GlobalSearch.tsx`: decisión consciente de NO extraer a hook compartido todavía. Tres copias triviales no justifican la abstracción prematura; cuando aterrice un cuarto consumidor, reabrir.
+  6. **TagPicker en modo create** muestra hint en vez de input (decisión confirmada con usuario): los tags son una relación post-save, evitar acumular tags pendientes en form-state local complica el UX y no aporta valor v1. Edit-only.
+  7. **Limit `* 6` en activity.findMany**: pool más grande que companies/contacts/leads (`* 3`) porque el filtro post-fetch parent-alive puede descartar muchas; mantenerlo conservador.
+- **Security Check**: PASS. Sin hardcoded secrets. `requireAuth` en los 8 endpoints de tags + el de search. Audit log sin PII (solo `{name, kind, tag_id, entity_type, entity_id}`). Validación zod en todos los endpoints. `TagBadge` aplica `tag.color` validado backend (`/^#[0-9A-Fa-f]{6}$/`) en `style`, sin vector XSS. Error responses con códigos genéricos (`VALIDATION_ERROR`, `NOT_FOUND`) sin filtrar internals. Anti-huérfano correcto en `assign` y en `search` (companies/contacts/leads y activities-via-parent).
+- **Tests**: backend 209/209 (26 archivos, +34 vs UJ-05: tags 16+8, search 6+4 originales del Pase 1 + 4 nuevos en mini-pase 1.1 = 6→10 service tests). Frontend 59/59 (17 archivos, +12 vs UJ-05: TagBadge 2 + TagPicker 6 + GlobalSearch 4). Total monorepo: **268 tests verde**. Lint 0 warnings, format 0 warnings, typecheck limpio en 3 workspaces.
+- **Notes**:
+  - **Validación end-to-end en navegador pendiente**: TagPicker (3 dialogs) + GlobalSearch palette + atajo ⌘K. Requiere docker compose up + login. Sin spec Playwright E2E para tags/search en este pase (consistente con UJ-05; añadir cuando CI live esté operativo).
+  - **Backend Pase 1 estaba sin commitear** desde la sesión previa (Codex había completado tags + search inicial pero la sesión cerró antes de commit). Esta sesión revisó manualmente, corrió lint+typecheck+test sobre todo, y consolidó en un único commit junto con mini-pase 1.1 + 2A + 2B.
+  - **Correcciones de review pre-commit aplicadas por Claude** (no por Codex): (a) helper `isTagAssignmentConflict` con `.includes` correcto, (b) format con prettier sobre 6 archivos.
+
+---
+
 ### 2026-04-28 — UJ-05: Activities polimórficas (backend + frontend)
 
 - **Work Done**: UJ-05 cerrado completo bajo patrón Claude orquestador + Codex ejecutor en dos pases (backend + frontend). Plan A: respeta el modelo `Activity` ya existente en schema.prisma:417 (polimórfico `(entity_type, entity_id)`, enums `ActivityKind = note|task|call_log|email_log|meeting_log` y `ActivityEntityType = company|contact|lead`); SIN migración nueva, SIN `whatsapp` en kind (entrará por taxonomías editables en UJ-13), SIN `outcome`, SIN soft-delete (delete duro). Pase 1 (backend, 21m 58s Codex): módulo `activities` siguiendo patrón `contacts` exacto, anti-huérfano en `create` que verifica entidad referenciada existe Y no está soft-deleted (`deletedAt: null` en company/lead, `deletedAt: null + anonymizedAt: null` en contact — no se pueden añadir actividades a contactos anonimizados), 4 endpoints `/activities` con `requireAuth`, audit log en mutaciones con metadata mínima `{kind, entity_type, entity_id}` sin PII, mapeo `Activity{Not,Entity}FoundError → 404 NOT_FOUND` en error-handler. Pase 2 (frontend, 6m 32s Codex): `lib/api/activities.ts` + tipos, `ActivityFeed.tsx` reutilizable (filtros kind + pendientes/todos/completados + mías/todas, toggle completado via PATCH `completed_at`, react-query con invalidación tras mutaciones, estados loading/error/empty, fechas relativas con `Intl.RelativeTimeFormat('es')`), `ActivityFormDialog.tsx` (zod cliente + datetime-local↔ISO, manejo de field-level errors del backend, sin owner_id en UI v1 con TODO(roles)), `DeleteActivityDialog.tsx`. Integración: tabs "Actividad" de `/leads/[id]`, `/contacts/[id]` y `/companies/[id]` ahora renderizan `<ActivityFeed entityType={...} entityId={...} />` (sustituyen el placeholder).
@@ -374,3 +398,61 @@ Read-only audit. Verified file existence on disk against work_log claims, ran th
 3. **`git init` + initial commit + push** so CI actually runs on a real PR before UJ-01 merges.
 4. **Run the full demo flow once locally**: `docker compose up -d db redis && pnpm install && pnpm db:migrate && pnpm seed:demo && pnpm --filter @heyday/frontend dev`. Confirm login + dashboard render with seeded data. This is the empirical M0 acceptance.
 5. **Then start M1 — UJ-01 (Login y sesión persistente)**. Most pieces are already in place from IT-09 + IT-10; UJ-01 closes the loop with end-to-end Playwright + the "session expired" UX.
+
+---
+
+## Review — Milestone M1 (CRM Core) — 2026-04-28
+
+### Scope reviewed
+
+UJ-01..UJ-06 (CRM Core). Independent fresh-eyes review por subagente: lectura cruzada de routes/services/error-handler/server, components GlobalSearch + TagPicker + form dialogs, schemas zod y wiring de Topbar. Énfasis especial en UJ-06 (recién cerrado).
+
+### Verification commands
+
+- `pnpm format:check` → exit 0 (limpio).
+- `pnpm lint` → exit 0 (3 workspaces, 0 warnings).
+- `pnpm typecheck` → exit 0 (3 workspaces).
+- `pnpm test` → exit 0. **Backend 209/209** (26 archivos), **Frontend 59/59** (17 archivos). Total **268 tests**.
+
+Notas: el suite frontend emite warnings de `act(...)` en `LeadFormDialog.test.tsx` (no rompen tests, son no-blocking — patrón conocido al tipar mutaciones async; ver "Non-blocking findings").
+
+### Findings per UJ
+
+- **UJ-01 (Login y sesión persistente)**: PASS. `requireAuth` global donde toca, refresh JWT en cookie httpOnly, rate limit 5/min en login, SessionWatcher con BroadcastChannel inter-pestañas. Tests login/refresh/logout + 3 specs E2E gated por env. No PII en logs/audit.
+- **UJ-02 (CRUD Empresas)**: PASS. 5 endpoints `/companies` con `requireAuth`, dedupe por dominio (libera al soft-delete), `safeHttpUrl` defiende contra XSS en URLs renderizadas, lista con filtros + paginación, detalle con 4 tabs. 9 service tests + 7 routes tests.
+- **UJ-03 (CRUD Contactos + anonymize)**: PASS. 6 endpoints con `requireAuth`. Anonymize implementado correctamente como acción **irreversible** (campo `anonymizedAt` + reemplazo de PII por placeholders) con audit log sin PII (solo `{contact_id}`). Doble confirmación literal "ANONIMIZAR" en frontend. **Deuda conocida (no blocker)**: migración Prisma `add_contact_anonymized_at` aún no ejecutada (requiere docker compose up); schema y cliente regenerados, tests pasan con mocks.
+- **UJ-04 (Pipelines y Kanban de Leads)**: PASS. CRUD pipelines + leads con transiciones won/lost; Kanban dnd-kit instalado correctamente (tras mitigar shim). 14+15+6+9 tests backend + 7 frontend. RBAC diferida a M3 con TODO(roles) explícito (aceptable v1: solo admin).
+- **UJ-05 (Activities polimórficas)**: PASS. Anti-huérfano implementado en `create` (rechaza company/lead soft-deleted y contactos anonimizados/soft-deleted). Audit log sin PII (`{kind, entity_type, entity_id}`). ActivityFeed integrado en tabs de companies/contacts/leads. Static imports tras corrección de review previa.
+- **UJ-06 (Tags y búsqueda global)**: PASS con observaciones menores.
+  - **Backend tags**: 8 endpoints (`GET/POST /tags`, `GET/PATCH/DELETE /tags/:id`, `POST /tags/assign`, `POST /tags/unassign`, `GET /tags/by-entity`) todos con `requireAuth`. Polimorfismo via `Taggable` y enum `TaggableEntityType` = `company|contact|lead|content_item` (sin `activity` — confirmado correcto). Anti-huérfano en `assign` valida company/contact (con anonymizedAt:null) /lead (con company.deletedAt:null); `content_item` lanza `TagAssignmentEntityNotFoundError` con TODO(M5). Audit log sin PII (solo nombres/ids/kind). Conflict 409 en duplicados (`TagNameConflictError`, `TagAssignmentConflictError`). 16 service tests + 8 routes tests.
+  - **Backend search**: `GET /search?q=` con `requireAuth`, busca en 4 tipos (companies/contacts/leads/**activities**). Filtros: `deletedAt:null` en company; `deletedAt:null + anonymizedAt:null + (companyId null o company alive)` en contact; `deletedAt:null + company.deletedAt:null` en lead; **activities**: post-filter parent-alive (recoge `entityIds` del set y filtra por padre vivo aplicando los mismos checks). Scoring exact(100) > prefix(50) > substring(10) con tie-break por `updatedAt desc`. 4 routes tests.
+  - **Frontend TagPicker**: typeahead debounced (300ms), create-on-the-fly con selector de `kind`, chip removal, react-query con invalidación correcta tras assign/unassign/create, manejo específico de 409 (conflict idempotente: refetcha asignadas) y 404 (entidad ya no existe). Mensajes de error genéricos (no leak de internals). 6 tests.
+  - **Frontend GlobalSearch**: ⌘K/Ctrl+K wired en Topbar (`metaKey || ctrlKey + k`), navegación por teclado (ArrowUp/Down/Enter/Escape), routing a `/companies/:id`, `/contacts/:id`, `/leads/:id`. **Fallback de actividades**: `destinationFor` retorna string vacío y muestra toast informativo en lugar de navegar (correcto: no hay detalle de actividad). 4 tests.
+  - **Integración**: TagPicker integrado en `CompanyFormDialog`, `ContactFormDialog`, `LeadFormDialog` (sección "Más datos"). **NO** integrado en `ActivityFormDialog` — confirmado correcto: el enum `TaggableEntityType` no incluye `activity`. Verificado por grep.
+
+### Critical issues (block continuing)
+
+**None.** Todos los gates pasan, todos los endpoints tienen `requireAuth`, anti-huérfano correcto en tags/activities/search, audit log sin PII, parameterized queries via Prisma, error-handler mapea 404/409/400 sin leak.
+
+### Non-blocking findings
+
+1. **`act(...)` warnings en `LeadFormDialog.test.tsx`** (frontend): los tests pasan pero React emite advertencias por updates de mutación async no envueltos en `act`. No bloquea pero ensucia el output del CI. Considerar refactor a `await waitFor()` en próximo polish pass.
+2. **`ContactPrimaryConflictError` dead code** (ya documentado en `project_memory.md`): definido pero la implementación auto-desmarca el primary anterior, así que nunca se lanza. Mantener o limpiar es decisión de policy futura.
+3. **Filtro `company_id` en lista de contactos** (deuda UJ-03 documentada): omitido este pase. No blocker para M1 — el detalle de empresa muestra contactos por su tab.
+4. **Validación end-to-end en navegador pendiente** para UJ-04/05/06: requiere `docker compose up` + login real. Specs Playwright existentes (login + companies-crud + contacts-crud + leads-crud) cubren flujos críticos pero están gated por env y no se ejecutan en `pnpm test`. Aceptable v1; activar tras conectar CI live.
+5. **Migración Prisma `add_contact_anonymized_at`** sigue pendiente (deuda UJ-03 documentada) — el campo está en schema y los tests pasan con mocks, pero el runtime real requiere `pnpm --filter @heyday/backend exec prisma migrate dev`. Bloqueará la primera arrancada con docker, no el merge de M1.
+6. **`pnpm-lock 2.yaml` residual** sigue en raíz del repo (visto en `git status`). Limpieza trivial pendiente.
+7. **`actorUserId: null` en audit logs**: aceptable v1 (RBAC arriba en M3/UJ-11). Ya documentado.
+8. **Sin spec Playwright E2E para activities ni para tags/search**: UJ-05 y UJ-06 carecen de spec E2E gated. Considerar añadirlas cuando CI live esté operativo.
+9. **`TagListQuerySchema` no incluye paginación** ni `kind` multi-select: pragmático v1 (catálogo pequeño). Si crece, añadir `take/skip`.
+
+### Verdict
+
+**PASS-WITH-NOTES**
+
+M1 está listo para cierre. Cero issues críticos; los hallazgos no-blocker ya están todos documentados en `project_memory.md` o son polish menor. Recomendaciones para la siguiente sesión:
+
+1. Conectar repo a GitHub y activar CI live; correr migraciones Prisma reales.
+2. Limpiar `pnpm-lock 2.yaml` residual.
+3. Cubrir warnings de `act` en `LeadFormDialog.test.tsx` en próximo polish.
+4. Arrancar M2 (UJ-07 Importación CSV → UJ-10 Filtros guardados).

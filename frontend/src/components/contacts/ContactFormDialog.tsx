@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { Modal } from '@/components/Modal';
+import { TagPicker } from '@/components/tags/TagPicker';
 import { createContact, updateContact } from '@/lib/api/contacts';
 import type {
   ConsentStatus,
@@ -435,6 +436,14 @@ export function ContactFormDialog({
               </div>
             </div>
           ) : null}
+        </div>
+
+        <div className="border-border bg-surface space-y-3 rounded-lg border px-4 py-4">
+          <h3 className="text-sm font-medium">Tags</h3>
+          <TagPicker
+            entityType="contact"
+            entityId={mode === 'edit' ? (contact?.id ?? null) : null}
+          />
         </div>
 
         <div className="flex justify-end gap-3">

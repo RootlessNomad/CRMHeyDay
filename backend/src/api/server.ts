@@ -34,6 +34,8 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerJobsRoutes } from './routes/jobs.js';
 import { registerLeadsRoutes } from './routes/leads.js';
 import { registerPipelinesRoutes } from './routes/pipelines.js';
+import { registerSearchRoutes } from './routes/search.js';
+import { registerTagsRoutes } from './routes/tags.js';
 import './types.js'; // side-effect: amplía FastifyRequest con authUser
 
 export interface BuildAppOptions {
@@ -109,6 +111,8 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await registerPipelinesRoutes(app);
   await registerLeadsRoutes(app);
   await registerActivitiesRoutes(app);
+  await registerTagsRoutes(app);
+  await registerSearchRoutes(app);
   await registerJobsRoutes(app);
 
   // ---- Error handler (al final, tras las rutas)

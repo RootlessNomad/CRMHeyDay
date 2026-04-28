@@ -1,4 +1,5 @@
 /// <reference types="@testing-library/jest-dom" />
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,6 +27,17 @@ vi.mock('@/lib/api/companies', async () => {
   };
 });
 
+function renderWithProviders(node: JSX.Element): void {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
+  render(<QueryClientProvider client={client}>{node}</QueryClientProvider>);
+}
+
 describe('CompanyFormDialog', () => {
   beforeEach(() => {
     createCompanyMock.mockReset();
@@ -38,7 +50,9 @@ describe('CompanyFormDialog', () => {
   });
 
   it('renderiza modo create con campos base visibles y colapsables ocultos', () => {
-    render(<CompanyFormDialog open onClose={vi.fn()} mode="create" onSuccess={vi.fn()} />);
+    renderWithProviders(
+      <CompanyFormDialog open onClose={vi.fn()} mode="create" onSuccess={vi.fn()} />,
+    );
 
     expect(screen.getByLabelText(/nombre/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/website/i)).toBeInTheDocument();
@@ -47,7 +61,9 @@ describe('CompanyFormDialog', () => {
   });
 
   it('muestra error requerido si name está vacío', async () => {
-    render(<CompanyFormDialog open onClose={vi.fn()} mode="create" onSuccess={vi.fn()} />);
+    renderWithProviders(
+      <CompanyFormDialog open onClose={vi.fn()} mode="create" onSuccess={vi.fn()} />,
+    );
 
     fireEvent.click(screen.getByRole('button', { name: /crear empresa/i }));
 
@@ -64,7 +80,9 @@ describe('CompanyFormDialog', () => {
       }),
     );
 
-    render(<CompanyFormDialog open onClose={vi.fn()} mode="create" onSuccess={vi.fn()} />);
+    renderWithProviders(
+      <CompanyFormDialog open onClose={vi.fn()} mode="create" onSuccess={vi.fn()} />,
+    );
 
     fireEvent.change(screen.getByLabelText(/nombre/i), { target: { value: 'Acme' } });
     fireEvent.change(screen.getByLabelText(/dominio/i), { target: { value: 'acme.test' } });
@@ -82,7 +100,9 @@ describe('CompanyFormDialog', () => {
     const onSuccess = vi.fn();
     createCompanyMock.mockResolvedValue({ id: 'cmp_1', name: 'Acme' });
 
-    render(<CompanyFormDialog open onClose={vi.fn()} mode="create" onSuccess={onSuccess} />);
+    renderWithProviders(
+      <CompanyFormDialog open onClose={vi.fn()} mode="create" onSuccess={onSuccess} />,
+    );
 
     fireEvent.change(screen.getByLabelText(/nombre/i), { target: { value: ' Acme ' } });
     fireEvent.change(screen.getByLabelText(/país/i), { target: { value: 'es' } });

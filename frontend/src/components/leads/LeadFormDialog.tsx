@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { Modal } from '@/components/Modal';
+import { TagPicker } from '@/components/tags/TagPicker';
 import { useAuthStore } from '@/lib/auth/store';
 import { createLead, updateLead } from '@/lib/api/leads';
 import { listPipelines } from '@/lib/api/pipelines';
@@ -420,6 +421,11 @@ export function LeadFormDialog({
         {pipelinesQuery.isError ? (
           <p className="text-danger text-sm">No se pudieron cargar los pipelines.</p>
         ) : null}
+
+        <div className="border-border bg-surface space-y-3 rounded-lg border px-4 py-4">
+          <h3 className="text-sm font-medium">Tags</h3>
+          <TagPicker entityType="lead" entityId={mode === 'edit' ? (lead?.id ?? null) : null} />
+        </div>
 
         <div className="flex justify-end gap-3">
           <button

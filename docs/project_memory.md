@@ -3,9 +3,9 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: M0 cerrado + M1 en marcha (5/6 UJ — UJ-05 ✅ completed).
-- **Last Completed**: **UJ-05 completo (backend + frontend)** — Plan A sin migración (Activity ya estaba en schema con polimorfismo `(entity_type, entity_id)`). Pase 1 backend (Codex 21m 58s): módulo `activities` siguiendo patrón `contacts`, anti-huérfano valida `deletedAt: null` en company/lead y `+ anonymizedAt: null` en contact, audit log sin PII, 4 endpoints con `requireAuth`. Pase 2 frontend (Codex 6m 32s): ActivityFeed reutilizable con filtros (kind/completed/mine) + react-query, ActivityFormDialog con zod + datetime-local↔ISO, DeleteActivityDialog; integrados en tabs "Actividad" de /leads/[id], /contacts/[id] y /companies/[id]. **Review crítica**: Codex Pase 1 introdujo dynamic imports en routes/activities.ts como workaround a timeouts del suite — Claude corrigió a static import (patrón de contacts) y atacó la causa raíz: `testTimeout: 15000ms` en backend/vitest.config.ts (bcrypt cost 12 + 21 tests adicionales saturaba CPU bajo paralelismo). 189 → 218 tests (+29). Cero crashes de Codex en este UJ.
-- **Next Step**: **UJ-06 Tags y búsqueda global** — sistema de tags polimórfico (model `Tag` con `entity_type` taxonomy, ya existe en schema) + búsqueda global (CMD+K palette o similar) sobre Companies/Contacts/Leads/Activities. Backend `/tags` CRUD + `/search?q=` con scoring. Frontend: `TagPicker` reutilizable, integración en formularios existentes (Company/Contact/Lead/Activity). Tras cerrar UJ-06, correr `/review` del milestone M1.
+- **Phase**: **M1 (CRM Core) cerrado ✅ — 6/6 UJ completed.** /review M1 PASS-WITH-NOTES (0 críticas). Listos para M2.
+- **Last Completed**: **UJ-06 Tags polimórficas y búsqueda global (3 pases)**. **Mini-pase 1.1 (Claude directo)**: extender `/search` a activities con post-filter parent-alive (4 queries en paralelo verifican company/contact/lead vivo); subtitle = "${kind} · ${parent}"; fallback `'(sin título)'`. **Pase 2A (Codex)**: `lib/api/tags.ts` (8 endpoints + helpers `isTagNameConflict`/`isTagAssignmentConflict`), `lib/api/search.ts`, `TagBadge` (color hex validado backend), `TagPicker` (typeahead 300ms + create-on-the-fly con selector de kind + chip removal + react-query mutations). Integrado en sección "Tags" de CompanyFormDialog/ContactFormDialog/LeadFormDialog. **Pase 2B (Codex)**: `<GlobalSearch />` palette flotante con `<Modal />`, atajo `Cmd/Ctrl+K` global en Topbar, navegación teclado plana, mapeo company→/companies/:id, contact→/contacts/:id, lead→/leads/:id, activity→toast (no detail page). **Pase 1 backend de Codex había quedado en working tree de sesión previa** (tags + search inicial), reconciliado en este commit. **Correcciones pre-commit por Claude**: helper `.includes` en vez de `.startsWith` (mensaje backend `La tag "..." ya está asignada` no empieza con esa cadena); format prettier sobre 6 archivos. **Tests**: 218 → 268 (+50: backend +34 con tags 16+8 service+routes y search 6+4 originales + 4 nuevos en mini-pase 1.1; frontend +16 con TagBadge 2 + TagPicker 6 + GlobalSearch 4 + ajustes en CompanyFormDialog test). Cero crashes Codex.
+- **Next Step**: **M2 — CRM Supporting (UJ-07 → UJ-10)**. UJ-07 Importación CSV empresas → UJ-08 Dashboard de inicio → UJ-09 Empty states y onboarding → UJ-10 Filtros guardados. Antes de arrancar UJ-07, considerar: (a) limpiar `pnpm-lock 2.yaml` residual (trivial), (b) refactor `act()` warnings en `LeadFormDialog.test.tsx` (polish), (c) añadir specs Playwright E2E para tags/search/activities (deuda M1). Ninguno bloquea M2.
 
 ## Estado verificable
 
@@ -14,7 +14,7 @@
 | `pnpm format:check` (root)   |   ✅   |
 | `pnpm lint` (root)           |   ✅   |
 | `pnpm typecheck` (3 ws)      |   ✅   |
-| `pnpm test` (218 tests)      |   ✅   |
+| `pnpm test` (268 tests)      |   ✅   |
 | Repo `.git` inicializado     |   ✅   |
 | CI GitHub Actions definido   |   ✅   |
 | Seed demo type-clean         |   ✅   |
@@ -64,7 +64,7 @@ M1–M5 (27 UJ) sin empezar.
 | UJ-03 CRUD Contactos + anonymize  | ✅ completed |
 | UJ-04 Pipelines y Kanban de Leads | ✅ completed |
 | UJ-05 Activities polimórficas     | ✅ completed |
-| UJ-06 Tags y búsqueda global      | pending      |
+| UJ-06 Tags y búsqueda global      | ✅ completed |
 
 ## Deuda específica UJ-03
 
@@ -102,16 +102,26 @@ Ver `docs/decision_log.md` (11 decisiones de Planning) y entradas relevantes del
 - **Sin spec Playwright E2E para activities**: a diferencia de UJ-02/03/04 no se añadió spec gated por env. Considerar para `/review` de M1.
 - **Lección aprendida (review crítica)**: Codex puede introducir workarounds que parecen razonables pero ocultan causas raíz. En este UJ fue dynamic import en `routes/activities.ts` "para evitar timeouts del suite" — la causa real era `testTimeout: 5000ms` insuficiente bajo CPU contention con bcrypt cost 12. Patrón a recordar: **si Codex menciona "lazy load", "diferido", "para evitar X bajo paralelismo" o similar, verificar la causa raíz antes de aceptar**.
 
+## Deuda específica UJ-06
+
+- **Validación end-to-end en navegador pendiente**: TagPicker en Company/Contact/Lead form dialogs + chip removal, `<GlobalSearch />` palette + atajo ⌘K/Ctrl+K + navegación teclado, fallback de activity hits (toast). Requiere docker compose up + login.
+- **Sin spec Playwright E2E para tags ni para search/palette** (consistente con UJ-05). Considerar batch único cuando CI live esté operativo.
+- **Activities NO son taggables**: enum `TaggableEntityType` backend = `company|contact|lead|content_item`. `TagPicker` solo en 3 dialogs, no 4. Si emerge demanda de tagging en activities, requiere migration con `'activity'` añadido al enum (no trivial).
+- **Activities sin detail page propio**: `<GlobalSearch />` muestra toast informativo en hits de activity en vez de navegar. Para deep-link real, backend `/search` debe devolver `entity_type/entity_id` del padre. Decidir UX antes de M3.
+- **`useDebouncedValue` triplicado** en `CompanyPicker.tsx`, `TagPicker.tsx`, `GlobalSearch.tsx`: decisión consciente de no extraer. Reabrir si aterriza un cuarto consumidor.
+- **`act()` warnings en `LeadFormDialog.test.tsx`**: tests pasan pero React emite warnings por mutations async no envueltas. Polish trivial pendiente.
+
 ## Pasos para la siguiente sesión
 
 1. `/session-start`
-2. **Arrancar UJ-06 Tags y búsqueda global** bajo patrón Claude+Codex. Alcance esperado:
-   - Backend module `tags` (model `Tag` ya existe en schema con `TaggableEntityType` enum). Endpoints CRUD `/tags` + asignación polimórfica + `GET /search?q=` con scoring sobre Companies/Contacts/Leads/Activities (titles + bodies).
-   - Frontend: `TagPicker` reutilizable (typeahead + create-on-the-fly), integración en formularios existentes (Company/Contact/Lead/Activity) en su sección "Más datos". CMD+K palette o `<GlobalSearch />` en Topbar.
-   - Tras cerrar UJ-06: `/review` del milestone M1.
-3. **Aún pendiente operativo** (no bloquea UJ-06):
-   - Validar UJ-04 + UJ-05 en navegador: docker compose up + login + probar Kanban DnD + ActivityFeed CRUD en los tres detalles + filtros URL-synced.
+2. **Arrancar M2 — CRM Supporting (UJ-07 Importación CSV empresas)** bajo patrón Claude+Codex. Alcance esperado de UJ-07:
+   - Backend: endpoint `POST /companies/import` (multipart), módulo `imports` con parser CSV (probable `papaparse` o nativo), validación zod por fila, dedupe por dominio reutilizando lógica de UJ-02, audit log con resumen `{rows_total, rows_created, rows_skipped, errors}`.
+   - Frontend: nueva página `/imports/companies` con upload, preview de las primeras 50 filas, mapeo de columnas, ejecución con progress + resultado.
+   - Decisión clave a confirmar antes: ¿procesar inline o vía BullMQ enrichment queue (IT-07 ya está)? Para ≤2k filas inline está bien; >2k requiere job.
+3. **Aún pendiente operativo (deuda M0/M1, no bloquea M2)**:
    - Migración Prisma `add_contact_anonymized_at` (deuda UJ-03).
-   - Validar seed demo + Playwright specs existentes (login + companies-crud + contacts-crud + leads-crud) con env `E2E_USER_*`.
-   - Conectar el repo a GitHub (`git remote add origin <url>` + `git push -u origin main`) para activar CI.
+   - Validar seed demo + Playwright specs existentes con env `E2E_USER_*`.
+   - Conectar repo a GitHub (`git remote add origin <url>` + `git push -u origin main`) para activar CI.
    - Limpiar `pnpm-lock 2.yaml` residual en raíz.
+   - Refactor `act()` warnings en `LeadFormDialog.test.tsx`.
+   - Añadir specs Playwright E2E para activities y tags/search.

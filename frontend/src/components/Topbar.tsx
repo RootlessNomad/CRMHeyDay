@@ -5,13 +5,14 @@
 
 import { LogOut, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { logoutRequest } from '@/lib/auth/api';
 import { broadcastLogout } from '@/lib/auth/broadcast';
 import { useAuthStore } from '@/lib/auth/store';
 
+import { GlobalSearch } from './GlobalSearch';
 import { ThemeToggle } from './ThemeToggle';
 
 export function Topbar(): JSX.Element {
@@ -19,6 +20,19 @@ export function Topbar(): JSX.Element {
   const user = useAuthStore((s) => s.user);
   const clear = useAuthStore((s) => s.clear);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    function handleKeydown(event: KeyboardEvent): void {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setOpen(true);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeydown);
+    return () => window.removeEventListener('keydown', handleKeydown);
+  }, []);
 
   async function handleLogout(): Promise<void> {
     try {
@@ -45,14 +59,20 @@ export function Topbar(): JSX.Element {
   return (
     <header className="glass border-border sticky top-0 z-20 flex h-14 items-center gap-3 border-b px-4 lg:px-6">
       <div className="relative max-w-xl flex-1">
-        <Search className="text-text-muted pointer-events-none absolute left-3 top-2.5 h-4 w-4" />
-        <input
-          type="search"
-          placeholder="Buscar empresas, contactos, leads…  (⌘K)"
-          disabled
-          className="border-border bg-surface-muted placeholder:text-text-muted h-9 w-full rounded-md border pl-9 pr-3 text-sm disabled:cursor-not-allowed"
-          aria-label="Búsqueda global (disponible próximamente)"
-        />
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="border-border bg-surface-muted h-9 w-full rounded-md border pl-9 pr-3 text-left text-sm"
+          aria-label="Abrir búsqueda global"
+        >
+          <Search className="text-text-muted pointer-events-none absolute left-3 top-2.5 h-4 w-4" />
+          <span className="text-text-muted flex h-full items-center pr-12 text-sm">
+            Buscar empresas, contactos, leads…
+          </span>
+          <kbd className="border-border text-text-muted absolute right-3 top-1/2 -translate-y-1/2 rounded border px-1.5 text-[10px]">
+            ⌘K
+          </kbd>
+        </button>
       </div>
 
       <div className="flex items-center gap-1">
@@ -101,6 +121,8 @@ export function Topbar(): JSX.Element {
           ) : null}
         </div>
       </div>
+
+      <GlobalSearch open={open} onClose={() => setOpen(false)} />
     </header>
   );
 }

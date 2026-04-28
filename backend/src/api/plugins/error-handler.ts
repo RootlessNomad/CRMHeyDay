@@ -9,6 +9,8 @@
 //   - CompanyNotFoundError        → 404 NOT_FOUND
 //   - ActivityNotFoundError       → 404 NOT_FOUND
 //   - ActivityEntityNotFoundError → 404 NOT_FOUND
+//   - TagNotFoundError            → 404 NOT_FOUND
+//   - TagAssignmentEntityNotFoundError → 404 NOT_FOUND
 //   - ContactNotFoundError        → 404 NOT_FOUND
 //   - ContactPrimaryConflictError → 409 VALIDATION_ERROR
 //   - ContactCompanyNotFoundError → 404 NOT_FOUND
@@ -24,6 +26,8 @@
 //   - CredentialNotFoundError     → 404 NOT_FOUND
 //   - JobNotFoundError            → 404 NOT_FOUND
 //   - CredentialConflictError     → 409 VALIDATION_ERROR
+//   - TagNameConflictError        → 409 VALIDATION_ERROR
+//   - TagAssignmentConflictError  → 409 VALIDATION_ERROR
 //   - SecretNotConfiguredError    → 503 INTEGRATION_UNAVAILABLE
 //   - AnthropicError              → depende de code → 5xx o 429
 //   - Fastify validation (4xx)    → passthrough con normalización
@@ -69,6 +73,12 @@ import {
   CredentialNotFoundError,
 } from '../../modules/credentials/service.js';
 import { JobNotFoundError } from '../../modules/jobs/service.js';
+import {
+  TagAssignmentConflictError,
+  TagAssignmentEntityNotFoundError,
+  TagNameConflictError,
+  TagNotFoundError,
+} from '../../modules/tags/service.js';
 
 interface ErrorBody {
   code: string;
@@ -115,6 +125,8 @@ export function registerErrorHandler(app: FastifyInstance): void {
       err instanceof CompanyNotFoundError ||
       err instanceof ActivityNotFoundError ||
       err instanceof ActivityEntityNotFoundError ||
+      err instanceof TagNotFoundError ||
+      err instanceof TagAssignmentEntityNotFoundError ||
       err instanceof ContactNotFoundError ||
       err instanceof ContactCompanyNotFoundError ||
       err instanceof PipelineNotFoundError ||
@@ -132,7 +144,9 @@ export function registerErrorHandler(app: FastifyInstance): void {
       err instanceof LeadCompanyMismatchError ||
       err instanceof StageNotInPipelineError ||
       err instanceof InvalidStageKindError ||
-      err instanceof InvalidLeadTransitionError
+      err instanceof InvalidLeadTransitionError ||
+      err instanceof TagNameConflictError ||
+      err instanceof TagAssignmentConflictError
     ) {
       return send(reply, 409, { code: ERROR_CODES.VALIDATION_ERROR, message: err.message });
     }
