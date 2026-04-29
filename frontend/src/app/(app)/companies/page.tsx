@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { CompanyFormDialog } from '@/components/companies/CompanyFormDialog';
+import { ImportCompaniesDialog } from '@/components/imports/ImportCompaniesDialog';
 import { listCompanies } from '@/lib/api/companies';
 import { ICP_VERTICALS, type CompanyListQuery, type IcpVertical } from '@/types/company';
 
@@ -71,6 +72,7 @@ export default function CompaniesPage(): JSX.Element {
   const queryClient = useQueryClient();
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [qInput, setQInput] = useState(searchParams.get('q') ?? '');
   const [cityInput, setCityInput] = useState(searchParams.get('city') ?? '');
 
@@ -154,18 +156,17 @@ export default function CompaniesPage(): JSX.Element {
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
+            onClick={() => setImportOpen(true)}
+            className="border-border bg-surface-muted hover:bg-bg h-10 rounded-md border px-4 text-sm font-medium transition"
+          >
+            Importar CSV
+          </button>
+          <button
+            type="button"
             onClick={() => setCreateOpen(true)}
             className="bg-accent h-10 rounded-md px-4 text-sm font-medium text-white transition hover:opacity-90"
           >
             Nueva empresa
-          </button>
-          <button
-            type="button"
-            disabled
-            title="Próximamente UJ-07"
-            className="border-border bg-surface-muted text-text-muted h-10 rounded-md border px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            Importar CSV
           </button>
           <button
             type="button"
@@ -356,6 +357,14 @@ export default function CompaniesPage(): JSX.Element {
         mode="create"
         onSuccess={() => {
           void handleCreated();
+        }}
+      />
+      <ImportCompaniesDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => {
+          setImportOpen(false);
+          return queryClient.invalidateQueries({ queryKey: ['companies'] });
         }}
       />
     </div>

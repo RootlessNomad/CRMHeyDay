@@ -44,6 +44,11 @@ Run `/session-start`:
 1. Read `docs/project_memory.md`
 2. Read `implementation/task_tracker.md`
 3. State where execution is resuming from
+4. **Proponer modelo** para la sesión según el trabajo pendiente. Criterio:
+   - **Opus 4.7** — review crítica, debugging complejo, decisiones de arquitectura, milestones grandes (M4/M5 con IA), primera vuelta de un UJ no trivial.
+   - **Sonnet 4.6** — orquestación de Codex con planning ya escrito, UJ mecánicos (CRUD, formularios, integraciones simples), actualizaciones de docs, refactors guiados.
+   - **Haiku 4.5** — tareas muy acotadas (un edit conocido, un grep, una verificación), confirmaciones rápidas.
+     El usuario tiene plan Claude Pro $20 con cuota limitada de Opus por ventana de 5 h. Reservar Opus para lo que aporte juicio; bajar a Sonnet/Haiku cuando el camino esté claro. Cambia con `/model`.
 
 ### For each Infrastructure Task
 

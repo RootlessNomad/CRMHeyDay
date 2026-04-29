@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PublicUserDto } from '../../modules/auth/service.js';
@@ -9,6 +10,9 @@ import type {
   CompanyUpdateInput,
 } from '../../modules/companies/schemas.js';
 import { signAccessToken } from '../../core/auth/tokens.js';
+import authPlugin from '../plugins/auth.js';
+import { registerErrorHandler } from '../plugins/error-handler.js';
+import '../types.js';
 
 const ADMIN: PublicUserDto = {
   id: 'user_company_routes',
@@ -163,14 +167,23 @@ interface InjectResponse {
   json: <T = unknown>() => T;
 }
 
+async function buildTestApp(): Promise<FastifyInstance> {
+  const { registerCompaniesRoutes } = await import('./companies.js');
+  const app = Fastify({ logger: false });
+  await app.register(await import('@fastify/sensible').then((mod) => mod.default));
+  await app.register(authPlugin);
+  await registerCompaniesRoutes(app);
+  registerErrorHandler(app);
+  return app;
+}
+
 describe('companies routes', () => {
   let app: FastifyInstance;
   let token: string;
 
   beforeEach(async () => {
     store.companies.clear();
-    const server = await import('../server.js');
-    app = await server.buildApp({ disableRateLimit: true });
+    app = await buildTestApp();
     token = signAccessToken({ sub: ADMIN.id, role: 'admin', sid: 'ses_company_routes' });
   });
 
