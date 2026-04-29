@@ -30,6 +30,7 @@ import { registerActivitiesRoutes } from './routes/activities.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerCompaniesRoutes } from './routes/companies.js';
 import { registerContactsRoutes } from './routes/contacts.js';
+import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerImportsRoutes } from './routes/imports.js';
 import { registerJobsRoutes } from './routes/jobs.js';
@@ -106,6 +107,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
 
   // ---- Rutas
   await registerHealthRoutes(app);
+  await registerDashboardRoutes(app);
   await registerAuthRoutes(app);
   await registerCompaniesRoutes(app);
   await registerImportsRoutes(app);

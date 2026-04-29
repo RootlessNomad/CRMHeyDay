@@ -15,6 +15,18 @@ Chronological record of all meaningful work. Each entry covers one infrastructur
 
 ---
 
+### 2026-04-29 — UJ-08: Dashboard de inicio (backend + frontend)
+
+- **Work Done**: 2 pases bajo patrón Claude+Codex. **Pase 1 backend**: módulo `dashboard` con `DashboardService` (metrics via `$transaction` 4 queries paralelas, upcomingActions filtradas por `ownerId`, topPriorityLeads top-5 con stage include). Decisión de Codex aceptada: `Lead` no tiene `title` → mapeado desde `company.name`. `Cache-Control: private, max-age=30` en los 3 endpoints. `approvals_pending: 0` con TODO(M5). **Pase 2 frontend**: `getDashboardMetrics/getUpcomingActions/getTopPriorityLeads` con `apiFetch`. `DashboardPage` sustituye el placeholder: 4 metric cards (3 con link), "Próximas acciones" + "Leads de máxima prioridad" con skeleton loading, "Coste IA este mes", empty state global cuando todo vacío.
+- **Files Created**: `backend/src/modules/dashboard/{schemas,service,service.test,index}.ts`, `backend/src/api/routes/dashboard.{ts,test.ts}`, `frontend/src/lib/api/dashboard.{ts,test.ts}`
+- **Files Modified**: `backend/src/api/server.ts`, `frontend/src/app/(app)/dashboard/page.tsx`
+- **Decisions**: `Lead.title` mapeado desde `company.name` (Lead no tiene campo title). Sin caché Redis (Cache-Control 30s suficiente en v1). Sin mini-gráfico IA (sin histórico hasta M3). `topPriorityLeads` global (sin RBAC hasta UJ-11).
+- **Security Check**: Pass. Auth requerido, Cache-Control private, upcoming filtradas por ownerId, sin PII en logs.
+- **Tests**: 245 → 245 backend (+18: service 12 + routes 6); 65 → 68 frontend (+3: api client tests). Total: 313 tests.
+- **Notes**: Codex completó ambos pases con reporte limpio (primer pase sin crash). Sin correcciones post-Codex necesarias.
+
+---
+
 ### 2026-04-29 — UJ-07 Pase 2: Importación CSV empresas — Frontend
 
 - **Work Done**: `ImportCompaniesDialog` con 3 steps (upload → preview dry-run → result). Cliente `imports.ts` con `fetch` directo + `getAccessToken()` (apiFetch no soporta FormData). Plantilla CSV estática en `frontend/public/templates/companies-template.csv`. Botón "Importar CSV" en `/companies` page. Correcciones post-Codex por Claude: hoisting issue en test (vi.hoisted para mocks de sonner + api); `getByText('3', { selector: 'p' })` → `getAllByText` (dos chips con valor 3 en el mismo render). 59 → 65 frontend tests (+6).
