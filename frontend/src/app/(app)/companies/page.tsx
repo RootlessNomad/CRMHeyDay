@@ -3,11 +3,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { CompanyFormDialog } from '@/components/companies/CompanyFormDialog';
 import { ImportCompaniesDialog } from '@/components/imports/ImportCompaniesDialog';
+import { usePersistedFilters } from '@/hooks/usePersistedFilters';
 import { listCompanies } from '@/lib/api/companies';
+import { useAuthStore } from '@/lib/auth/store';
 import { ICP_VERTICALS, type CompanyListQuery, type IcpVertical } from '@/types/company';
 
 const VERTICAL_LABELS: Record<IcpVertical, string> = {
@@ -70,11 +72,17 @@ export default function CompaniesPage(): JSX.Element {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const currentUser = useAuthStore((s) => s.user);
+  const { saveFilters, loadFilters, clearFilters } = usePersistedFilters(
+    'companies',
+    currentUser?.id,
+  );
 
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [qInput, setQInput] = useState(searchParams.get('q') ?? '');
   const [cityInput, setCityInput] = useState(searchParams.get('city') ?? '');
+  const restoredFiltersRef = useRef(false);
 
   useEffect(() => {
     setQInput(searchParams.get('q') ?? '');
@@ -103,11 +111,26 @@ export default function CompaniesPage(): JSX.Element {
   );
 
   useEffect(() => {
+    if (restoredFiltersRef.current) return;
+    restoredFiltersRef.current = true;
+    if (searchParams.toString() !== '') return;
+
+    const saved = loadFilters();
+    if (!saved) return;
+
+    router.replace(`${pathname}?${saved}`);
+  }, [loadFilters, pathname, router, searchParams]);
+
+  useEffect(() => {
     const next = buildSearchParams(query);
     const current = searchParams.toString();
     if (next === current) return;
     router.replace(next ? `${pathname}?${next}` : pathname);
   }, [pathname, query, router, searchParams]);
+
+  useEffect(() => {
+    saveFilters(new URLSearchParams(searchParams.toString()));
+  }, [searchParams, saveFilters]);
 
   const companiesQuery = useQuery({
     queryKey: ['companies', query],
@@ -180,7 +203,22 @@ export default function CompaniesPage(): JSX.Element {
       </div>
 
       <div className="border-border bg-surface rounded-lg border p-5 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {hasActiveFilters ? (
+            <button
+              type="button"
+              onClick={() => {
+                clearFilters();
+                router.replace(pathname);
+              }}
+              className="border-border bg-surface-muted hover:bg-bg h-10 rounded-md border px-4 text-sm font-medium transition"
+            >
+              Restablecer
+            </button>
+          ) : null}
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
           <div className="space-y-1.5">
             <label htmlFor="companies-q" className="block text-sm font-medium">
               Buscar
