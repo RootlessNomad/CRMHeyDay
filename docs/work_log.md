@@ -15,6 +15,28 @@ Chronological record of all meaningful work. Each entry covers one infrastructur
 
 ---
 
+### 2026-04-29 — UJ-10: Filtros guardados
+
+- **Work Done**: Hook `usePersistedFilters(key, userId)` con clave `heyday:filters:{key}:{userId ?? 'anonymous'}` en localStorage. SSR guard (`typeof window === 'undefined'`). Funciones estables via `useCallback`. Integrado en `/companies` y `/leads` pages: restaura al montar si URL sin params (useRef para satisfacer exhaustive-deps), persiste al cambiar `searchParams`, botón «Restablecer filtros» visible cuando `hasActiveFilters`. 4 tests nuevos.
+- **Files Created**: `frontend/src/hooks/usePersistedFilters.ts`, `frontend/src/hooks/usePersistedFilters.test.ts`
+- **Files Modified**: `frontend/src/app/(app)/companies/page.tsx`, `frontend/src/app/(app)/leads/page.tsx`
+- **Decisions**: Un hook por par (key, userId) en vez de store global. Clave anónima como fallback (sin userId). Vaciar localStorage cuando params son vacíos (en vez de guardar string vacío). Patrón useRef para ejecutar efecto de monte solo una vez sin lint warning.
+- **Security Check**: Pass. Sin PII en claves o valores (solo URLSearchParams serializada: q, filtros de dominio público). Aislamiento por userId evita cross-user leakage. Sin XSS (valores de URL ya validados al parsear).
+- **Tests**: 69 → 73 frontend (+4). Total: 245 backend + 73 frontend = 318 tests.
+- **Notes**: Codex crash silencioso post-edición (patrón conocido). Trabajo en working tree intacto; lint/typecheck/test todo verde sin correcciones adicionales.
+
+---
+
+### 2026-04-29 — UJ-09: Empty states y onboarding
+
+- **Work Done**: `ComingSoonPage` reutilizable con props `title`, `description`, `milestone` + link «← Volver al inicio». 16 stub pages explícitas (no catch-all): `/activities`, `/intel/{companies,contacts,leads,content}`, `/content/{ideas,drafts,reviews,schedule}`, `/admin/{users,credentials,taxonomies,dashboard,gdpr,settings}`. Test de `ComingSoonPage` (+1). Sin 404s en sidebar.
+- **Files Created**: `frontend/src/components/ComingSoonPage.tsx`, `frontend/src/components/ComingSoonPage.test.tsx`, 16 `page.tsx` stub files
+- **Decisions**: Pages explícitas en vez de catch-all para facilitar sustitución gradual milestone a milestone. Milestone labels en español (M3/M4/M5).
+- **Security Check**: Pass. Solo HTML estático, sin datos de usuario.
+- **Tests**: 313 → 314 frontend (+1 ComingSoonPage test). Total: 314 tests.
+
+---
+
 ### 2026-04-29 — UJ-08: Dashboard de inicio (backend + frontend)
 
 - **Work Done**: 2 pases bajo patrón Claude+Codex. **Pase 1 backend**: módulo `dashboard` con `DashboardService` (metrics via `$transaction` 4 queries paralelas, upcomingActions filtradas por `ownerId`, topPriorityLeads top-5 con stage include). Decisión de Codex aceptada: `Lead` no tiene `title` → mapeado desde `company.name`. `Cache-Control: private, max-age=30` en los 3 endpoints. `approvals_pending: 0` con TODO(M5). **Pase 2 frontend**: `getDashboardMetrics/getUpcomingActions/getTopPriorityLeads` con `apiFetch`. `DashboardPage` sustituye el placeholder: 4 metric cards (3 con link), "Próximas acciones" + "Leads de máxima prioridad" con skeleton loading, "Coste IA este mes", empty state global cuando todo vacío.

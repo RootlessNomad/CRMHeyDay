@@ -3,9 +3,9 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: **M2 (CRM Supporting) en curso — UJ-07 ✅**. M1 cerrado ✅ (6/6 UJ). /review M1 PASS-WITH-NOTES (0 críticas).
-- **Last Completed**: **UJ-08 Dashboard de inicio (completo — 2 pases)**. Backend: módulo `dashboard` + 3 endpoints con Cache-Control private. Frontend: `DashboardPage` con 4 metric cards + próximas acciones + top leads + coste IA + empty state global. 313 tests (245 backend + 68 frontend). Verde. **Mini-pase 1.1 (Claude directo)**: extender `/search` a activities con post-filter parent-alive (4 queries en paralelo verifican company/contact/lead vivo); subtitle = "${kind} · ${parent}"; fallback `'(sin título)'`. **Pase 2A (Codex)**: `lib/api/tags.ts` (8 endpoints + helpers `isTagNameConflict`/`isTagAssignmentConflict`), `lib/api/search.ts`, `TagBadge` (color hex validado backend), `TagPicker` (typeahead 300ms + create-on-the-fly con selector de kind + chip removal + react-query mutations). Integrado en sección "Tags" de CompanyFormDialog/ContactFormDialog/LeadFormDialog. **Pase 2B (Codex)**: `<GlobalSearch />` palette flotante con `<Modal />`, atajo `Cmd/Ctrl+K` global en Topbar, navegación teclado plana, mapeo company→/companies/:id, contact→/contacts/:id, lead→/leads/:id, activity→toast (no detail page). **Pase 1 backend de Codex había quedado en working tree de sesión previa** (tags + search inicial), reconciliado en este commit. **Correcciones pre-commit por Claude**: helper `.includes` en vez de `.startsWith` (mensaje backend `La tag "..." ya está asignada` no empieza con esa cadena); format prettier sobre 6 archivos. **Tests**: 218 → 268 (+50: backend +34 con tags 16+8 service+routes y search 6+4 originales + 4 nuevos en mini-pase 1.1; frontend +16 con TagBadge 2 + TagPicker 6 + GlobalSearch 4 + ajustes en CompanyFormDialog test). Cero crashes Codex.
-- **Next Step**: **UJ-09 Empty states y onboarding** — solo frontend: empty states en companies/contacts/leads/content con CTA primaria. Aceptance: sin seed la app no rompe y cada sección muestra empty state útil. UJ-07 Importación CSV empresas → UJ-08 Dashboard de inicio → UJ-09 Empty states y onboarding → UJ-10 Filtros guardados. Antes de arrancar UJ-07, considerar: (a) limpiar `pnpm-lock 2.yaml` residual (trivial), (b) refactor `act()` warnings en `LeadFormDialog.test.tsx` (polish), (c) añadir specs Playwright E2E para tags/search/activities (deuda M1). Ninguno bloquea M2.
+- **Phase**: **M2 (CRM Supporting) cerrado — UJ-07→10 ✅ (4/4)**. M1 cerrado ✅ (6/6 UJ). /review M1 PASS-WITH-NOTES (0 críticas). **Pendiente: /review M2**.
+- **Last Completed**: **UJ-10 Filtros guardados** — hook `usePersistedFilters` con clave por userId, SSR guard, funciones estables via useCallback. Integrado en companies y leads: restaura al montar si URL sin params, persiste al cambiar filtros, botón «Restablecer». 73 tests frontend. 318 tests totales (245 backend + 73 frontend).
+- **Next Step**: **`/review` M2** (UJ-07→10). Tras el review, arrancar **M3 — Admin Panel** (UJ-11 Gestión de usuarios).
 
 ## Estado verificable
 
@@ -14,7 +14,7 @@
 | `pnpm format:check` (root)   |   ✅   |
 | `pnpm lint` (root)           |   ✅   |
 | `pnpm typecheck` (3 ws)      |   ✅   |
-| `pnpm test` (268 tests)      |   ✅   |
+| `pnpm test` (318 tests)      |   ✅   |
 | Repo `.git` inicializado     |   ✅   |
 | CI GitHub Actions definido   |   ✅   |
 | Seed demo type-clean         |   ✅   |
@@ -54,6 +54,15 @@ M1–M5 (27 UJ) sin empezar.
   pnpm seed:demo           # taxonomías + Alex/Alba + datos demo
   pnpm dev                 # arranca backend + frontend + worker
   ```
+
+## Progreso M2
+
+| UJ                              | Estado       |
+| ------------------------------- | ------------ |
+| UJ-07 Importación CSV empresas  | ✅ completed |
+| UJ-08 Dashboard de inicio       | ✅ completed |
+| UJ-09 Empty states y onboarding | ✅ completed |
+| UJ-10 Filtros guardados         | ✅ completed |
 
 ## Progreso M1
 
@@ -114,14 +123,11 @@ Ver `docs/decision_log.md` (11 decisiones de Planning) y entradas relevantes del
 ## Pasos para la siguiente sesión
 
 1. `/session-start`
-2. **Arrancar M2 — CRM Supporting (UJ-07 Importación CSV empresas)** bajo patrón Claude+Codex. Alcance esperado de UJ-07:
-   - Backend: endpoint `POST /companies/import` (multipart), módulo `imports` con parser CSV (probable `papaparse` o nativo), validación zod por fila, dedupe por dominio reutilizando lógica de UJ-02, audit log con resumen `{rows_total, rows_created, rows_skipped, errors}`.
-   - Frontend: nueva página `/imports/companies` con upload, preview de las primeras 50 filas, mapeo de columnas, ejecución con progress + resultado.
-   - Decisión clave a confirmar antes: ¿procesar inline o vía BullMQ enrichment queue (IT-07 ya está)? Para ≤2k filas inline está bien; >2k requiere job.
-3. **Aún pendiente operativo (deuda M0/M1, no bloquea M2)**:
-   - Migración Prisma `add_contact_anonymized_at` (deuda UJ-03).
-   - Validar seed demo + Playwright specs existentes con env `E2E_USER_*`.
+2. **`/review` M2** (UJ-07→10) — verificar que los 4 UJs de M2 son funcionales, completos y sin gaps de seguridad.
+3. **Arrancar M3 — Admin Panel** comenzando por **UJ-11 Gestión de usuarios** (listar, activar/desactivar, cambiar rol). Backend: UsersService ya existe (IT-05); añadir endpoints + RBAC admin. Frontend: tabla de usuarios + toggle activo + selector de rol.
+4. **Deuda operativa (no bloquea M3)**:
+   - Migración Prisma `add_contact_anonymized_at` (deuda UJ-03, requiere docker).
    - Conectar repo a GitHub (`git remote add origin <url>` + `git push -u origin main`) para activar CI.
    - Limpiar `pnpm-lock 2.yaml` residual en raíz.
    - Refactor `act()` warnings en `LeadFormDialog.test.tsx`.
-   - Añadir specs Playwright E2E para activities y tags/search.
+   - Specs Playwright E2E para activities, tags/search, imports.
