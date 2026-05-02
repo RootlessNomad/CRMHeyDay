@@ -23,6 +23,44 @@ export interface AuditEntry {
   ip?: string | null;
 }
 
+export interface AuditLogDto {
+  id: string;
+  actorUserId: string | null;
+  actorName: string | null;
+  actorEmail: string | null;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  metadata: unknown;
+  ip: string | null;
+  createdAt: Date;
+}
+
+function toAuditLogDto(row: {
+  id: bigint;
+  actorUserId: string | null;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  metadata: Prisma.JsonValue;
+  ip: string | null;
+  createdAt: Date;
+  actor: { id: string; name: string; email: string } | null;
+}): AuditLogDto {
+  return {
+    id: row.id.toString(),
+    actorUserId: row.actorUserId,
+    actorName: row.actor?.name ?? null,
+    actorEmail: row.actor?.email ?? null,
+    action: row.action,
+    entityType: row.entityType,
+    entityId: row.entityId,
+    metadata: row.metadata,
+    ip: row.ip,
+    createdAt: row.createdAt,
+  };
+}
+
 export class AuditService {
   private readonly db: PrismaClient;
 
@@ -41,6 +79,55 @@ export class AuditService {
         ip: entry.ip ?? null,
       },
     });
+  }
+
+  async listPaginated(params: {
+    actorUserId?: string;
+    action?: string;
+    from?: Date;
+    to?: Date;
+    page?: number;
+    limit?: number;
+  }): Promise<{ items: AuditLogDto[]; total: number; page: number; limit: number }> {
+    const page = Math.max(1, params.page ?? 1);
+    const limit = Math.min(200, Math.max(1, params.limit ?? 50));
+    const where = {
+      actorUserId: params.actorUserId,
+      action: params.action,
+      createdAt:
+        params.from || params.to
+          ? {
+              ...(params.from ? { gte: params.from } : {}),
+              ...(params.to ? { lte: params.to } : {}),
+            }
+          : undefined,
+    } satisfies Prisma.AuditLogWhereInput;
+
+    const [items, total] = await Promise.all([
+      this.db.auditLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          actor: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      }),
+      this.db.auditLog.count({ where }),
+    ]);
+
+    return {
+      items: items.map(toAuditLogDto),
+      total,
+      page,
+      limit,
+    };
   }
 }
 

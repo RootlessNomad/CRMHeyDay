@@ -1,0 +1,15 @@
+export {
+  TaxonomiesService,
+  taxonomiesService,
+  TaxonomyNotFoundError,
+  TaxonomyConflictError,
+  type PainPointCategoryDto,
+  type ServiceLineDto,
+  type ContentPillarDto,
+  type CreatePainPointCategoryInput,
+  type UpdatePainPointCategoryInput,
+  type CreateServiceLineInput,
+  type UpdateServiceLineInput,
+  type CreateContentPillarInput,
+  type UpdateContentPillarInput,
+} from './service.js';

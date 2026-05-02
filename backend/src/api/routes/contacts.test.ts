@@ -19,12 +19,29 @@ const ADMIN: PublicUserDto = {
   lastLoginAt: null,
 };
 
+const OPERATOR: PublicUserDto = {
+  id: 'user_contact_routes_op',
+  email: 'operator@heyday.test',
+  name: 'Operator',
+  role: 'operator',
+  isActive: true,
+  lastLoginAt: null,
+};
+
+const { exportContactDataMock } = vi.hoisted(() => ({
+  exportContactDataMock: vi.fn(),
+}));
+
 vi.mock('../../core/queue/connection.js', () => ({ redis: null }));
 
 vi.mock('../../modules/auth/service.js', () => ({
   authService: {
     getUserForToken: vi.fn(async () => ADMIN),
   },
+}));
+
+vi.mock('../../modules/gdpr/index.js', () => ({
+  gdprService: { exportContactData: exportContactDataMock },
 }));
 
 interface Store {
@@ -219,10 +236,32 @@ describe('contacts routes', () => {
   let token: string;
 
   beforeEach(async () => {
+    vi.clearAllMocks();
     store.contacts.clear();
     store.companies.clear();
     store.companies.add('company_1');
     store.companies.add('company_2');
+    exportContactDataMock.mockResolvedValue({
+      exportedAt: '2026-05-01T10:00:00.000Z',
+      contact: {
+        id: 'contact_1',
+        firstName: 'Alex',
+        lastName: null,
+        roleTitle: null,
+        email: 'alex@heyday.test',
+        phone: null,
+        whatsapp: null,
+        linkedinUrl: null,
+        isPrimary: true,
+        consentStatus: 'granted',
+        createdAt: '2026-05-01T10:00:00.000Z',
+        updatedAt: '2026-05-01T10:00:00.000Z',
+        anonymizedAt: null,
+        deletedAt: null,
+      },
+      activities: [],
+      leads: [],
+    });
     const server = await import('../server.js');
     app = await server.buildApp({ disableRateLimit: true });
     token = signAccessToken({ sub: ADMIN.id, role: 'admin', sid: 'ses_contact_routes' });
@@ -386,6 +425,45 @@ describe('contacts routes', () => {
       is_primary: false,
       consent_status: 'revoked',
     });
+  });
+
+  it('GET /contacts/:id/data-export -> 200 con datos de export', async () => {
+    const res = await authInject(app, token, {
+      method: 'GET',
+      url: '/contacts/c1/data-export',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ exportedAt: '2026-05-01T10:00:00.000Z' });
+  });
+
+  it('GET /contacts/:id/data-export -> 404 si contacto no existe', async () => {
+    const { ContactNotFoundError } = await import('../../modules/contacts/service.js');
+    exportContactDataMock.mockRejectedValue(new ContactNotFoundError('missing'));
+
+    const res = await authInject(app, token, {
+      method: 'GET',
+      url: '/contacts/missing/data-export',
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('GET /contacts/:id/data-export -> 403 con operator token', async () => {
+    const { authService } = await import('../../modules/auth/service.js');
+    vi.mocked(authService.getUserForToken).mockResolvedValueOnce(OPERATOR);
+    const operatorToken = signAccessToken({
+      sub: OPERATOR.id,
+      role: 'operator',
+      sid: 'ses_contact_routes_op',
+    });
+
+    const res = await authInject(app, operatorToken, {
+      method: 'GET',
+      url: '/contacts/c1/data-export',
+    });
+
+    expect(res.statusCode).toBe(403);
   });
 });
 

@@ -40,6 +40,11 @@ export function Topbar(): JSX.Element {
     } catch {
       // ignoramos errores: limpiamos igual en cliente para evitar estado colgado
     }
+    if (typeof window !== 'undefined') {
+      Object.keys(window.localStorage)
+        .filter((k) => k.startsWith('heyday:'))
+        .forEach((k) => window.localStorage.removeItem(k));
+    }
     clear();
     broadcastLogout(); // notifica a otras pestañas
     toast.success('Sesión cerrada');

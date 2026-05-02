@@ -3,9 +3,9 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: **M2 (CRM Supporting) cerrado — UJ-07→10 ✅ (4/4)**. M1 cerrado ✅ (6/6 UJ). /review M1 PASS-WITH-NOTES (0 críticas). **Pendiente: /review M2**.
-- **Last Completed**: **UJ-10 Filtros guardados** — hook `usePersistedFilters` con clave por userId, SSR guard, funciones estables via useCallback. Integrado en companies y leads: restaura al montar si URL sin params, persiste al cambiar filtros, botón «Restablecer». 73 tests frontend. 318 tests totales (245 backend + 73 frontend).
-- **Next Step**: **`/review` M2** (UJ-07→10). Tras el review, arrancar **M3 — Admin Panel** (UJ-11 Gestión de usuarios).
+- **Phase**: **M2 (CRM Supporting) cerrado y revisado — UJ-07→10 ✅ (4/4)**. M1 cerrado ✅ (6/6 UJ). /review M1 PASS-WITH-NOTES (0 críticas). **/review M2 PASS-WITH-NOTES (0 críticas)**. Listo para arrancar M3.
+- **Last Completed**: **`/review` M3 — PASS-WITH-NOTES** (0 críticos). Fix aplicado: `GET /contacts/:id/data-export` escalado a `requireRole('admin')` + test 403. 403 tests totales (313 backend + 90 frontend).
+- **Next Step**: **M4 — Lead Intelligence** — UJ-16 Investigar empresa por URL (Anthropic + scraping). Leer design_summary + api_contracts sección Intel antes de planificar.
 
 ## Estado verificable
 
@@ -14,7 +14,7 @@
 | `pnpm format:check` (root)   |   ✅   |
 | `pnpm lint` (root)           |   ✅   |
 | `pnpm typecheck` (3 ws)      |   ✅   |
-| `pnpm test` (318 tests)      |   ✅   |
+| `pnpm test` (403 tests)      |   ✅   |
 | Repo `.git` inicializado     |   ✅   |
 | CI GitHub Actions definido   |   ✅   |
 | Seed demo type-clean         |   ✅   |
@@ -41,8 +41,13 @@ M1–M5 (27 UJ) sin empezar.
 ## Deuda y pendientes
 
 - ~~Backend typecheck~~ ✅ cerrado 2026-04-25 (42 errores TS resueltos).
+- ~~`pnpm-lock 2.yaml` residual~~ ✅ cerrado 2026-04-29.
+- ~~UJ-07 envelope error mismatch frontend/backend~~ ✅ cerrado 2026-04-29.
 - **Apify** (M5): instalar `apify-client` y registrar credencial Level 3 cuando arranque Content Engine. No bloqueante hasta entonces.
 - **CI live**: el workflow está definido pero no se ha ejecutado contra GitHub. Pendiente: añadir `origin` remoto y `git push -u origin main`.
+- **CSV formula injection** (UJ-07): celdas que empiezan con `=+-@` se almacenan verbatim. Inocuo hoy (React escapa en UI). **Disparador**: sanear antes de **UJ-27 (export CSV)** o el "Excel supercell" se filtra. Estrategia: prefijar `'` o strip al exportar.
+- **localStorage no se limpia en logout** (UJ-10): `Topbar.logout` no borra `heyday:filters:*` ni la clave residual `anonymous` de pre-hidratación. Riesgo bajo (datos no sensibles: q/city/vertical/status) pero en dispositivo compartido las búsquedas previas persisten. **Disparador**: cuando **UJ-11** toque sesión/usuarios, añadir wipe de prefijo `heyday:` en logout.
+- **Test 401 missing** (UJ-08): `/dashboard/top-priority-leads` está protegido pero no tiene test 401. Gap de cobertura. Añadir junto al primer cambio de UJ-08.
 - **Validación end-to-end del seed demo**: requiere docker compose arriba. Comando completo:
   ```
   cp .env.example .env  # si aún no existe
@@ -120,14 +125,25 @@ Ver `docs/decision_log.md` (11 decisiones de Planning) y entradas relevantes del
 - **`useDebouncedValue` triplicado** en `CompanyPicker.tsx`, `TagPicker.tsx`, `GlobalSearch.tsx`: decisión consciente de no extraer. Reabrir si aterriza un cuarto consumidor.
 - **`act()` warnings en `LeadFormDialog.test.tsx`**: tests pasan pero React emite warnings por mutations async no envueltas. Polish trivial pendiente.
 
+## Progreso M3
+
+| UJ                         | Estado       |
+| -------------------------- | ------------ |
+| UJ-11 Gestión de usuarios  | ✅ completed |
+| UJ-12 Credential Vault UI  | ✅ completed |
+| UJ-13 Taxonomías editables | ✅ completed |
+| UJ-14 Dashboard IA + Audit | ✅ completed |
+| UJ-15 GDPR toolkit         | ✅ completed |
+
 ## Pasos para la siguiente sesión
 
 1. `/session-start`
-2. **`/review` M2** (UJ-07→10) — verificar que los 4 UJs de M2 son funcionales, completos y sin gaps de seguridad.
-3. **Arrancar M3 — Admin Panel** comenzando por **UJ-11 Gestión de usuarios** (listar, activar/desactivar, cambiar rol). Backend: UsersService ya existe (IT-05); añadir endpoints + RBAC admin. Frontend: tabla de usuarios + toggle activo + selector de rol.
-4. **Deuda operativa (no bloquea M3)**:
+2. **UJ-13 Taxonomías editables** — pipelines, stages, verticals, service types editables desde el Admin Panel. Ver design docs para spec completa.
+3. **Deuda operativa (no bloquea M3)**:
+   - ~~Logout localStorage cleanup~~ ✅ cerrado en UJ-11 (Topbar limpia `heyday:*`).
    - Migración Prisma `add_contact_anonymized_at` (deuda UJ-03, requiere docker).
    - Conectar repo a GitHub (`git remote add origin <url>` + `git push -u origin main`) para activar CI.
-   - Limpiar `pnpm-lock 2.yaml` residual en raíz.
    - Refactor `act()` warnings en `LeadFormDialog.test.tsx`.
-   - Specs Playwright E2E para activities, tags/search, imports.
+   - Specs Playwright E2E para activities, tags/search, imports, dashboard empty-DB state.
+   - Test 401 para `/dashboard/top-priority-leads`.
+   - Sanear CSV formula injection antes de UJ-27.

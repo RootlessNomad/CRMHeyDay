@@ -25,12 +25,15 @@ import { env } from '../core/config/env.js';
 import { rootLogger } from '../core/observability/logger.js';
 import { redis } from '../core/queue/connection.js';
 import authPlugin from './plugins/auth.js';
+import { registerAdminRoutes } from './routes/admin.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
 import { registerActivitiesRoutes } from './routes/activities.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerCompaniesRoutes } from './routes/companies.js';
 import { registerContactsRoutes } from './routes/contacts.js';
+import { registerCredentialsRoutes } from './routes/credentials.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
+import { registerGdprRoutes } from './routes/gdpr.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerImportsRoutes } from './routes/imports.js';
 import { registerJobsRoutes } from './routes/jobs.js';
@@ -38,6 +41,8 @@ import { registerLeadsRoutes } from './routes/leads.js';
 import { registerPipelinesRoutes } from './routes/pipelines.js';
 import { registerSearchRoutes } from './routes/search.js';
 import { registerTagsRoutes } from './routes/tags.js';
+import { registerTaxonomiesRoutes } from './routes/taxonomies.js';
+import { registerUsersRoutes } from './routes/users.js';
 import './types.js'; // side-effect: amplía FastifyRequest con authUser
 
 export interface BuildAppOptions {
@@ -112,12 +117,17 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await registerCompaniesRoutes(app);
   await registerImportsRoutes(app);
   await registerContactsRoutes(app);
+  await registerCredentialsRoutes(app);
+  await registerGdprRoutes(app);
   await registerPipelinesRoutes(app);
   await registerLeadsRoutes(app);
   await registerActivitiesRoutes(app);
   await registerTagsRoutes(app);
   await registerSearchRoutes(app);
   await registerJobsRoutes(app);
+  await registerUsersRoutes(app);
+  await registerAdminRoutes(app);
+  await registerTaxonomiesRoutes(app);
 
   // ---- Error handler (al final, tras las rutas)
   registerErrorHandler(app);

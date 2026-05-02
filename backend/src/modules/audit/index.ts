@@ -1,1 +1,1 @@
-export { AuditService, auditService, type AuditEntry } from './service.js';
+export { AuditService, auditService, type AuditEntry, type AuditLogDto } from './service.js';

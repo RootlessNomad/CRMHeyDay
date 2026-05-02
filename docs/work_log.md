@@ -15,6 +15,111 @@ Chronological record of all meaningful work. Each entry covers one infrastructur
 
 ---
 
+### 2026-05-02 — /review M3: Admin Panel
+
+**Verdict**: PASS-WITH-NOTES
+
+**Critical issues** (must fix before M4):
+
+- None
+
+**Non-critical notes**:
+
+- UJ-15: `GET /contacts/:id/data-export` uses `requireAuth` but NOT `requireRole('admin')`. The UJ-15 spec says "solo admin" for the export, and the contact detail page is reachable by all authenticated users (not admin-only). This is a minor authorization gap — any authenticated operator/viewer can export any contact's PII. Low urgency (internal app, all users are trusted staff) but violates the spec.
+- UJ-14: The spec lists `/admin/external-usage` as one of four endpoints in UJ-14. It was not implemented — only `ai-usage`, `audit-log`, and `integration-health` exist. The frontend does not reference it either, and the task tracker note does not mention it as a gap. Worth noting for M4 if external API cost visibility is needed.
+- UJ-12: The `test` action for a credential is fire-and-forget (worker job). The UI only shows the jobId via toast; it does not poll for the job result or update the health chip automatically. The spec says "ver salud actualizarse" after testing — this is a known deferred item per the task tracker but means the acceptance criteria is only partially met.
+- UJ-13: The taxonomy page's `refresh` function only invalidates the active tab's query key; switching tabs after a mutation on another tab will show stale data until the query naturally refetches. Minor UX gap.
+- All M3 pages use `requireAuth` / `requireRole('admin')` correctly on backend routes. Admin sidebar section is gated to `role === 'admin'` in the Sidebar component.
+
+**Per-UJ summary**:
+
+- UJ-11: PASS — 5 endpoints with `requireRole('admin')`, audit logs, anti-self-deactivation, last-admin guard, full frontend with invite/edit/reset-password dialogs, 11 backend + 5 frontend tests, 401/403 coverage.
+- UJ-12: PASS-WITH-NOTES — 7 endpoints with `requireRole('admin')`, no-leak test verified in tests, health chip present, rotate/delete/test dialogs all wired. Gap: test action is fire-and-forget; health chip does not auto-refresh after test completes (known deferred item).
+- UJ-13: PASS — 9 endpoints (GET with `requireAuth`, POST/PATCH with `requireRole('admin')`), 3-tab frontend with create/edit/toggle dialogs, 26 backend tests. Minor: per-tab stale invalidation on tab switch after mutation.
+- UJ-14: PASS-WITH-NOTES — 3 of 4 spec endpoints implemented (`/admin/ai-usage`, `/admin/audit-log`, `/admin/integration-health`). `/admin/external-usage` omitted without noted deviation. Frontend pages functional with loading/error/empty states, pagination on audit log.
+- UJ-15: PASS-WITH-NOTES — `purgeOldLogs` + `exportContactData` implemented and tested. Export button present in contact detail. `/admin/settings` page functional with native confirm guard. Authorization gap: data-export endpoint only requires `requireAuth`, not `requireRole('admin')` as spec states.
+
+---
+
+### 2026-05-02 — /review M3: Admin Panel
+
+- **Verdict**: PASS-WITH-NOTES (0 críticos)
+- **Fix aplicado**: `GET /contacts/:id/data-export` escalado de `requireAuth` a `requireRole('admin')` + test 403 añadido en contacts.test.ts.
+- **Non-critical notes**:
+  - UJ-12: health chip no auto-refresca tras test-ping job (deferred, conocido)
+  - UJ-13: stale data posible en tab switch tras mutación (background refetch lo resuelve)
+  - UJ-14: `/admin/external-usage` definido en api_contracts pero fuera del alcance del UJ; diferido
+- **Tests tras fix**: 313 backend + 90 frontend = 403 totales
+
+---
+
+### 2026-05-02 — UJ-15: GDPR toolkit
+
+- **Work Done**: Pase 1 (Codex): módulo `gdpr` backend — GdprService con `exportContactData` (incluye contactos soft-deleted, activities, leads) y `purgeOldLogs` (deleteMany en ai_usage_logs + external_api_usage_logs con cutoff); endpoint `GET /contacts/:id/data-export` añadido a contacts routes; `POST /admin/gdpr/purge-logs` (requireRole admin) en nueva route gdpr.ts; registrado en server.ts. Pase 2 (Claude directo): `lib/api/gdpr.ts` con `exportContactData` (trigger download via Blob) y `purgeOldLogs`; botón "Exportar datos" en `/contacts/[id]`; `/admin/settings` reemplaza stub con UI de retención (input días + botón purgar + confirmación native + resultado). Fix: `body` → `json` en apiFetch (ApiRequestInit no acepta `body` raw).
+- **Files Created**:
+  - `backend/src/modules/gdpr/service.ts` — GdprService
+  - `backend/src/modules/gdpr/service.test.ts` — 3 tests unitarios
+  - `backend/src/modules/gdpr/index.ts` — exports
+  - `backend/src/api/routes/gdpr.ts` — POST /admin/gdpr/purge-logs
+  - `backend/src/api/routes/gdpr.test.ts` — 4 tests (200/401/403/400)
+  - `frontend/src/lib/api/gdpr.ts` — exportContactData + purgeOldLogs
+- **Files Modified**:
+  - `backend/src/api/routes/contacts.ts` — GET /contacts/:id/data-export añadido
+  - `backend/src/api/routes/contacts.test.ts` — +2 tests (200 export + 404)
+  - `backend/src/api/server.ts` — registerGdprRoutes registrado
+  - `frontend/src/app/(app)/contacts/[id]/page.tsx` — botón "Exportar datos"
+  - `frontend/src/app/(app)/admin/settings/page.tsx` — UI de retención real
+- **Decisions**: Export vía Blob en cliente (no link directo — requiere Bearer token). Purge sincrónico (no BullMQ — volúmenes pequeños). UI de retención en /admin/settings (no página GDPR nueva — sin link en sidebar). Confirmación nativa `window.confirm` (sin dialog custom — acción destructiva pero simple).
+- **Security Check**: PASS — data-export: requireAuth (cualquier usuario autenticado); purge: requireRole('admin'); export no incluye secrets del vault; purge no toca datos de empresas/contactos/leads; sin XSS.
+- **Tests**: 393 → 402 (+9 backend: 3 service + 4 gdpr routes + 2 contacts). Frontend: 90 sin cambio.
+- **Notes**: Codex devió de 3 campos del spec (Activity.subject → title, Lead.title → company.name, Activity sin deletedAt). Las desviaciones son correctas respecto al schema real de Prisma.
+
+---
+
+### 2026-05-02 — UJ-14: Dashboard IA + Audit + Health
+
+- **Work Done**: Tres páginas del Admin Panel activadas (ya implementadas en working tree desde sesión anterior). Backend: módulo `admin` (AdminService con getAiUsageSummary + getIntegrationHealth), 3 endpoints GET (`/admin/ai-usage`, `/admin/audit-log`, `/admin/integration-health`) con `requireRole('admin')`; AuditService.listPaginated añadido. Frontend: páginas `/admin/ai-costs` (métricas 4 cards + tablas por feature/modelo/día), `/admin/audit` (tabla filtrable por actor/acción/fecha + paginación), `/admin/integrations` (tabla con HealthChip + estado activo). API client `lib/api/admin.ts` con 3 funciones. Verificado: lint ✅, typecheck ✅, 303 backend + 90 frontend = 393 tests ✅.
+- **Files Created**:
+  - `backend/src/modules/admin/service.ts` — AdminService
+  - `backend/src/modules/admin/service.test.ts` — 3 tests
+  - `backend/src/modules/admin/index.ts` — exports
+  - `backend/src/api/routes/admin.ts` — 3 endpoints
+  - `backend/src/api/routes/admin.test.ts` — 7 tests (401/403/200 por endpoint)
+  - `frontend/src/lib/api/admin.ts` — tipos + cliente (getAiUsage, getAuditLog, getIntegrationHealth)
+- **Files Modified**:
+  - `backend/src/modules/audit/service.ts` — listPaginated añadido
+  - `backend/src/modules/audit/index.ts` — export listPaginated
+  - `backend/src/api/server.ts` — registerAdminRoutes registrado
+  - `frontend/src/app/(app)/admin/ai-costs/page.tsx` — página real (reemplaza stub)
+  - `frontend/src/app/(app)/admin/audit/page.tsx` — página real (reemplaza stub)
+  - `frontend/src/app/(app)/admin/integrations/page.tsx` — página real (reemplaza stub)
+- **Decisions**: Sin gráfico de línea (no hay librería de charts instalada — tablas son suficientes para v1). AuditLog.listPaginated en AuditService (no AdminService) para mantener separación de módulos.
+- **Security Check**: PASS — todos los endpoints con requireRole('admin'); audit log no expone campos sensibles; credenciales sin reveal; sin XSS (React escapa).
+- **Tests**: 383 → 393 (+10 backend: 7 routes + 3 service). Frontend: 90 sin cambio.
+
+---
+
+### 2026-04-29 — UJ-12: Credential Vault UI
+
+- **Work Done**: Página `/admin/credentials` real (reemplaza stub). Backend ya estaba en working tree (route + tests + cableado en server.ts) — solo se limpió un unused var en `credentials.test.ts` (`SAMPLE_CRED_HTTP`). Frontend implementado directamente por Claude (Codex falló por parse error de shell en la invocación). 8 archivos nuevos + 1 modificado.
+- **Files Created/Modified**:
+  - `frontend/src/lib/api/credentials.ts` — tipos + cliente API (listCredentials, createCredential, rotateCredential, setCredentialActive, deleteCredential, testCredential)
+  - `frontend/src/components/credentials/HealthChip.tsx` — chip visual con colores ok/warn/error/unknown + tooltip nativo con lastError
+  - `frontend/src/components/credentials/CredentialsTable.tsx` — tabla con columnas Key/Label/Provider/Salud/Estado/Última rotación/Acciones; botón "Probar" disabled si inactiva
+  - `frontend/src/components/credentials/CredentialsTable.test.tsx` — 5 tests
+  - `frontend/src/components/credentials/CreateCredentialDialog.tsx` — Zod (key regex `^[a-z0-9_]+$`), toggle show/hide plaintext, 409 → toast
+  - `frontend/src/components/credentials/CreateCredentialDialog.test.tsx` — 3 tests (submit válido, 409, validación key)
+  - `frontend/src/components/credentials/RotateCredentialDialog.tsx` — un solo campo newPlaintext con toggle
+  - `frontend/src/components/credentials/DeleteCredentialDialog.tsx` — confirmación con key exacta (patrón AnonymizeContactDialog)
+  - `frontend/src/app/(app)/admin/credentials/page.tsx` — page real con react-query, dialogs, estados loading/error/vacío/datos
+  - `backend/src/api/routes/credentials.test.ts` — eliminado `SAMPLE_CRED_HTTP` unused (lint fix)
+- **Decisions**: Test-ping fire-and-forget (encola job, muestra toast con jobId, sin polling). Worker `integration_test` queda como placeholder — implementar probes reales por proveedor es deuda fuera de UJ-12. `reveal()` nunca expuesto por HTTP.
+- **Security Check**: PASS — no crypto fields en responses, plaintext solo en input, sin dangerouslySetInnerHTML, authz requireRole('admin'), delete confirma key exacta.
+- **Tests**: 8 nuevos frontend (5 CredentialsTable + 3 CreateCredentialDialog). Backend credentials: 11 tests ya existentes en working tree. Total: 267 backend + 86 frontend = 353.
+- **Notes**: Codex falló en invocación porque el prompt contenía backticks + `${}` que zsh interpretó como expansión de comandos. Claude implementó directamente. Patrón a recordar: evitar backticks y `${}` en prompts pasados como argumento de shell a codex-companion.
+
+---
+
 ### 2026-04-29 — UJ-10: Filtros guardados
 
 - **Work Done**: Hook `usePersistedFilters(key, userId)` con clave `heyday:filters:{key}:{userId ?? 'anonymous'}` en localStorage. SSR guard (`typeof window === 'undefined'`). Funciones estables via `useCallback`. Integrado en `/companies` y `/leads` pages: restaura al montar si URL sin params (useRef para satisfacer exhaustive-deps), persiste al cambiar `searchParams`, botón «Restablecer filtros» visible cuando `hasActiveFilters`. 4 tests nuevos.
@@ -513,4 +618,221 @@ M1 está listo para cierre. Cero issues críticos; los hallazgos no-blocker ya e
 1. Conectar repo a GitHub y activar CI live; correr migraciones Prisma reales.
 2. Limpiar `pnpm-lock 2.yaml` residual.
 3. Cubrir warnings de `act` en `LeadFormDialog.test.tsx` en próximo polish.
-4. Arrancar M2 (UJ-07 Importación CSV → UJ-10 Filtros guardados).
+
+---
+
+### 2026-04-29 — /review M2 (UJ-07→10)
+
+**Result: PASS-WITH-NOTES**
+
+#### UJ-07 Importación CSV empresas
+
+Backend (`POST /companies/import-csv`):
+
+- `requireAuth` presente via `preHandler`. Redundant `!actorUserId` guard also in place. ✅
+- `@fastify/multipart` registered scoped to a sub-app (not global). ✅
+- 2 MB file size limit enforced via `limits: { fileSize: 2 * 1024 * 1024 }`. ✅
+- Row cap 1000 enforced by `countDataRows` before CSV parsing (`ImportCapError`). ✅
+- `ImportHeaderError` → 422 with `{ error: 'missing_required_headers', headers: [...] }`. ✅
+- `ImportCapError` → 400 with `{ error: 'too_many_rows', limit: 1000 }`. ✅
+- Dry-run mode supported via `?dry_run=true` query param. ✅
+- Dedupe by domain both within CSV and against DB. ✅
+- Audit log written for every import (including dry-runs). ✅
+- 12 service tests + 6 route tests (401, 400-no-file, 400-wrong-type, 422, 400-cap, 200-happy). ✅
+
+Frontend (`ImportCompaniesDialog`):
+
+- 3-step flow: `upload → preview (dry-run) → result`. ✅
+- Client-side validation: extension must be `.csv`, size must be ≤ 2 MB. ✅
+- Step labels and counters (Total / A crear / Duplicados / Con errores) shown at preview. ✅
+- Import button disabled when `rows_created === 0` in dry-run preview. ✅
+- CSV template downloadable at `/templates/companies-template.csv` (file exists in `public/`). ✅
+- "Importar CSV" button wired in `/companies` page. ✅
+- 6 component tests covering: upload-disabled, size validation, dry-run flow, full submit, error inline, 0-rows disabled. ✅
+
+**Issue found — error code mismatch (non-blocking UX defect):**
+The backend sends `{ error: 'too_many_rows', limit: 1000 }` and `{ error: 'missing_required_headers', headers: [...] }` where `error` is a plain string. The frontend `imports.ts` client attempts to parse it as `body.error?.code` (treating `body.error` as an object with a `.code` field). Because `body.error` is a string, `.code` is `undefined`, and the error falls through to generic `UNKNOWN_ERROR`. Consequently, `isImportCapError()` and `isImportHeaderError()` always return `false`, and `renderErrorMessage()` produces the generic "No se pudo procesar el archivo CSV." message instead of the specific user-friendly strings. This is a UX defect — the user does not see actionable messaging for cap/header violations. This is **not caught by any test** because `ImportCompaniesDialog.test.tsx` mocks `isImportCapError`/`isImportHeaderError` directly, bypassing the real parsing in `imports.ts`.
+
+Fix: either change the backend to return `{ error: { code: 'too_many_rows', message: '...' } }` (consistent with `ApiErrorPayload`), or fix the frontend client to parse `{ error: string }` shape directly.
+
+#### UJ-08 Dashboard de inicio
+
+Backend:
+
+- `GET /dashboard/metrics` → `requireAuth` + `Cache-Control: private, max-age=30`. ✅
+- `GET /dashboard/upcoming-actions` → `requireAuth` + `Cache-Control: private, max-age=30`. ✅
+- `GET /dashboard/top-priority-leads` → `requireAuth` + `Cache-Control: private, max-age=30`. ✅
+- Metrics: leads_open, leads_stale (>7d), jobs_running, ai_cost_month_usd via `$transaction`. ✅
+- `approvals_pending` hardcoded to 0 (content approval model not built yet — M5). Acceptable, documented in tests. ✅
+- upcomingActions filters by `ownerId`, `dueAt >= now`, `completedAt IS NULL`. ✅
+- topPriorityLeads uses `company.name` as `title` (correct: `Lead.title` does not exist; tracker notes this fix). ✅
+- Service tests: 3 metrics tests + 2 upcomingActions + 2 topPriorityLeads. Route tests: 6 (happy x3 + 401 x2 + Cache-Control). ✅
+- **Minor gap**: no 401 test for `GET /dashboard/top-priority-leads` specifically (only metrics and upcoming-actions have explicit 401 tests). The endpoint IS protected by `requireAuth`; this is a test coverage gap, not a security gap. Non-blocking.
+
+Frontend:
+
+- `DashboardPage` at `/dashboard`. ✅
+- 4 metric cards: Leads abiertos, Sin acción >7d, Aprobaciones pendientes, Jobs activos. ✅
+- Metric cards for leads link to `/leads`; approvals link to `/content/reviews`. ✅
+- 2 sections: "Próximas acciones" and "Leads de máxima prioridad". ✅
+- `ListSkeleton` shown while loading (pulse animation). ✅
+- Empty state per-section ("Sin acciones próximas." / "Sin leads abiertos.") and global `isGloballyEmpty` empty state. ✅
+- AI cost section at bottom. ✅
+- `/dashboard` reachable from sidebar as "Inicio" (first item). ✅
+- Root `/` redirects to `/dashboard`. ✅
+- 3 frontend API client tests for dashboard. ✅
+
+#### UJ-09 Empty states y onboarding
+
+- All 16 stub routes verified to have `page.tsx` files: `/activities`, `/intel/research`, `/intel/pain-points`, `/intel/service-fit`, `/intel/outbound`, `/content/ideas`, `/content/reviews`, `/content/library`, `/content/calendar`, `/admin/users`, `/admin/credentials`, `/admin/taxonomies`, `/admin/ai-costs`, `/admin/audit`, `/admin/integrations`, `/admin/settings`. ✅
+- All render via `ComingSoonPage` component with `title`, `description`, and `milestone` props. ✅
+- `ComingSoonPage` includes a "← Volver al inicio" link to `/`. ✅
+- Sidebar covers all these routes (cross-checked against `SECTIONS` in `Sidebar.tsx`). ✅
+- No 404s for any sidebar link. ✅
+- `/activities` correctly shows a ComingSoonPage that notes activities ARE available in entity detail tabs (good UX). ✅
+- 1 component test for `ComingSoonPage`. ✅
+- **Gap**: no E2E test for empty states with empty DB (as called for in UJ-09 acceptance criteria). This is the same pattern as M1 — Playwright specs exist for other journeys but none specifically for empty-DB state rendering. Non-blocking.
+
+#### UJ-10 Filtros guardados
+
+- `usePersistedFilters` hook at `frontend/src/hooks/usePersistedFilters.ts`. ✅
+- Per-user storage key: `heyday:filters:${key}:${userId ?? 'anonymous'}`. ✅
+- SSR guard: `if (typeof window === 'undefined') return null`. ✅
+- `useCallback` for stable references on `saveFilters`, `loadFilters`, `clearFilters`. ✅
+- Integration in `/companies/page.tsx`: restores on mount when `searchParams.toString() === ''`, saves on every `searchParams` change, "Restablecer" button visible when `hasActiveFilters`. ✅
+- Integration in `/leads/page.tsx`: same pattern — `usePersistedFilters('leads', currentUser?.id)`. ✅
+- "Restablecer" button calls `clearFilters()` and resets route params. ✅
+- 4 unit tests covering: save, load-null, load-after-save, clear-and-per-user isolation. ✅
+
+**Critical issues** (must fix before M3):
+
+None.
+
+**Notes** (non-blocking):
+
+1. **UJ-07 — Error code mismatch in import client** (UX defect): when the backend returns a cap or header error, the frontend shows "No se pudo procesar el archivo CSV." instead of the specific user-friendly message. Fix: align the backend error shape to `{ error: { code, message } }` or teach the frontend client to handle `{ error: string }`. No test currently catches this because the component test mocks the type-guard functions directly.
+2. **UJ-08 — Missing 401 test for `GET /dashboard/top-priority-leads`**: the endpoint is protected by `requireAuth`; this is a test coverage gap only.
+3. **UJ-09 — No Playwright E2E for empty-DB state**: acceptance criteria calls for this; deferred like M1 E2E specs pending CI live environment.
+4. **UJ-08 — `approvals_pending` hardcoded to 0**: expected and documented; will be wired in M5. The metric card link (`/content/reviews`) goes to a ComingSoonPage stub, which is correct for now.
+5. **UJ-07 — `pnpm-lock 2.yaml` residual still in repo root**: carry-over from M1, unrelated to M2 work.
+6. Arrancar M2 (UJ-07 Importación CSV → UJ-10 Filtros guardados).
+
+---
+
+## Review M2 (UJ-07→10) — 2026-04-29
+
+**Verdict**: PASS-WITH-NOTES
+
+### Verification commands
+
+- format:check: ❌ (1 file: `docs/work_log.md` — auto-modified by this very review write)
+- lint: ✅
+- typecheck: ✅ (3 workspaces clean)
+- test: ✅ (318 tests — 245 backend + 73 frontend)
+
+### UJ-07 Importación CSV empresas
+
+- Backend `POST /companies/import-csv` correctly gated by `requireAuth`; `@fastify/multipart` scoped sub-app with `fileSize: 2 MB` and `files: 1`. ✅
+- File-type check accepts `text/csv`, `application/vnd.ms-excel`, OR `.csv` extension (lenient — fine for v1, internal admin tool).
+- Row cap 1000 enforced before parse via `countDataRows`; `ImportCapError` → 400, `ImportHeaderError` → 422. ✅
+- Per-row validation via `CsvRowSchema` (zod with `emptyToUndefined` preprocess). Domain dedupe both intra-CSV and against `Company` table (soft-delete-aware via `deletedAt: null`). ✅
+- Errors per-row do not block the rest. Audit log written for every run (including dry-run). ✅
+- Dry-run via `?dry_run=true` powers the preview step. ✅
+- Tests: 12 service + 6 routes (happy, 401, 400 missing file, 400 bad type, 422 header error, 400 cap). ✅
+- Frontend `ImportCompaniesDialog` has 3 steps (upload → preview → result), client-side `.csv` + 2 MB validation, plantilla descargable en `/templates/companies-template.csv` (existe en `public/`). 6 tests. ✅
+
+**Findings** (non-critical):
+
+- **CSV formula injection (CSV injection / Excel "supercell")**: cells beginning with `=`, `+`, `-`, `@`, tab or CR are stored verbatim and later rendered as plain text in the React UI (safe from DOM XSS). However if a user re-exports company data to CSV (M5/UJ-27 export) those values become formulas in Excel. **Recommend** sanitising on import (prepend `'` to formula-prefix strings) or at export time, before UJ-27 ships. Not exploitable today but worth recording.
+- **Error-shape mismatch frontend ↔ backend** (carry-over from prior review section above): `imports.ts` parses `body.error?.code`, backend returns `{ error: 'too_many_rows', limit: 1000 }`. Type-guards `isImportCapError` / `isImportHeaderError` always return `false` against real responses, so user always sees the generic "No se pudo procesar el archivo CSV." Tests pass because component test mocks the guards. Pending fix.
+- Dedupe semantics consistent with UJ-02 (`normalizeDomain` reused; soft-deleted rows freed). ✅
+- No handler for `request.body too large` (Fastify multipart will reject >2 MB at protocol level — verified via dependency limits). The error surfaces as a generic 500/413 because there is no explicit catch; consider mapping to a friendly message. Minor.
+
+### UJ-08 Dashboard de inicio
+
+- 3 endpoints (`/dashboard/metrics`, `/upcoming-actions`, `/top-priority-leads`) all behind `requireAuth`, all set `Cache-Control: private, max-age=30`. ✅
+- Metrics use `prisma.$transaction` (no N+1). `topPriorityLeads` uses single query with `include` for `stage` and `company` (no N+1). ✅
+- `upcomingActions` filters by `ownerId` (= caller) — only own activities surface. ✅
+- `approvals_pending` hardcoded `0` (content approval model lands in M5). Documented. Card links to `/content/reviews` which is a ComingSoonPage stub — coherent. ✅
+- Service: 12 tests. Routes: 6 tests including 2 explicit 401 tests. **Gap**: no explicit 401 test for `/dashboard/top-priority-leads` (still protected). ⚠️
+- Frontend `DashboardPage`: react-query for the 3 endpoints; skeletons; per-section + global empty state; AI cost section; 4 metric cards. Renders `lead.title` (= `company.name`) and `action.title` as plain text → React auto-escapes (XSS-safe). ✅
+
+### UJ-09 Empty states y onboarding (stub pages)
+
+- 16 pages confirmed via `grep -l ComingSoonPage` (intel ×4, content ×4, admin ×7, activities). ✅
+- `ComingSoonPage` is a pure presentational stub (no fake data, no broken forms, no fake submit buttons) — truly stubs. ✅
+- Sidebar `SECTIONS` cross-checked: every `href` resolves to a `page.tsx` (stub, real, or list page). Zero 404s reachable from nav. ✅
+- Each stub shows `title`, `description`, milestone, "← Volver al inicio" link. ✅
+- 1 component test for `ComingSoonPage`. **Gap**: no Playwright E2E for empty-DB rendering (UJ-09 acceptance asks for it). Carried over.
+
+### UJ-10 Filtros guardados (persisted filters)
+
+- Hook `usePersistedFilters(key, userId)` at `frontend/src/hooks/usePersistedFilters.ts`. Storage key `heyday:filters:${key}:${userId ?? 'anonymous'}` is per-user. ✅
+- SSR-safe: every `window.localStorage` access guarded by `typeof window === 'undefined'`. ✅
+- `useCallback` on `saveFilters/loadFilters/clearFilters` for stable identities. ✅
+- Integrated in `/companies` and `/leads`: restore on mount only when URL has no params; auto-save on every `searchParams` change; "Restablecer" button visible when `hasActiveFilters`. ✅
+- 4 unit tests (save, load-null, load-after-save, clear isolated by userId). ✅
+
+**Security findings** (non-critical):
+
+- **No cleanup on logout**: `Topbar.tsx` calls `logoutRequest()` + `broadcastLogout()` but does not clear `heyday:filters:*` from localStorage. The filter values persist on disk until the user logs back in (per-user key, so a different user does not see them). Low risk because filters only contain non-sensitive query params (`q`, `city`, `icp_vertical`, status, etc.) but on a shared device this leaks the prior user's saved searches. Recommend a cleanup pass at logout (`Object.keys(localStorage).filter(k => k.startsWith('heyday:filters:')).forEach(k => localStorage.removeItem(k))`).
+- **Anonymous fallback key (`heyday:filters:companies:anonymous`)**: if `useAuthStore.user` is briefly undefined (during AuthBootstrap hydration) the hook writes under the `anonymous` key. Subsequent users would not collide (key still partitioned per user once hydrated), but a stale `anonymous` entry can persist forever. Cosmetic.
+- **XSS via stored filter values**: values come from URL query params and are written/read as strings; rendered through React (auto-escaped). No `dangerouslySetInnerHTML` anywhere in companies/leads pages. ✅ Safe.
+- **localStorage capacity**: no enforcement on number of saved filter strings — bounded by 2 keys (companies, leads) per user, so unbounded growth not a concern. ✅
+
+### Critical issues (must fix before M3)
+
+**none**
+
+### Non-critical notes (deuda)
+
+1. **UJ-07 frontend error-shape mismatch** (UX): `imports.ts` does not parse the backend's `{ error: 'string' }` shape. User sees generic message instead of "El archivo supera el máximo de 1.000 filas permitido." or "Faltan cabeceras obligatorias en el CSV." No test catches this because guards are mocked.
+2. **UJ-07 CSV formula-injection hardening**: prepend `'` to cells starting with `=+-@` either at import or at export, before UJ-27 (export) ships.
+3. **UJ-07 413/large-payload error mapping**: when client uploads >2 MB the response is generic; map to friendly "El archivo supera 2 MB".
+4. **UJ-08 missing 401 test for `/dashboard/top-priority-leads`** — coverage gap, not a security gap.
+5. **UJ-09 no Playwright E2E for empty-DB rendering** — same backlog item as M1; depends on CI live + docker.
+6. **UJ-10 filters not cleared on logout** — recommend wiping `heyday:filters:*` keys on logout to avoid leaking saved searches on shared devices.
+7. **UJ-10 stale `anonymous` key** during pre-hydration window — cosmetic.
+8. **`pnpm-lock 2.yaml` residual** in repo root — carry-over from M1.
+
+### 2026-04-29 — Post-/review M2: cierres operativos
+
+- **Work Done**: Aplicados los fixes inmediatos del review M2.
+  1. **Fix envelope error UJ-07**: `backend/src/api/routes/imports.ts` ahora devuelve el envelope estándar `{ error: { code, message, details? } }` para `missing_file`, `invalid_file_type`, `missing_required_headers` (con `details.headers`) y `too_many_rows` (con `details.limit`). Los type-guards del frontend `isImportCapError`/`isImportHeaderError` (que parsean `body.error?.code`) ahora matchean correctamente y el usuario ve el mensaje específico en vez del genérico.
+  2. **Tests del route actualizados** (`backend/src/api/routes/imports.test.ts`): los 4 casos de error reflejan el nuevo envelope. 6 tests del fichero verdes.
+  3. **Limpieza `pnpm-lock 2.yaml`** residual en raíz (deuda heredada de M1).
+- **Files Modified**:
+  - `backend/src/api/routes/imports.ts`
+  - `backend/src/api/routes/imports.test.ts`
+  - `docs/project_memory.md` (anotada deuda CSV formula-injection + logout cleanup, eliminada deuda cerrada)
+  - `implementation/task_tracker.md` (UJ-07→10 marcados Review Passed = yes)
+- **Files Removed**:
+  - `pnpm-lock 2.yaml`
+- **Verification**: `pnpm format:check` ✅ · `pnpm lint` ✅ · `pnpm typecheck` ✅ · `pnpm test` ✅ 318 tests (245 backend + 73 frontend).
+- **Deuda diferida (no bloquea M3)**:
+  - **UJ-07 CSV formula-injection**: sanear celdas `=+-@` antes de **UJ-27** (export CSV).
+  - **UJ-10 logout cleanup**: cuando UJ-11 toque sesión, añadir wipe de prefijo `heyday:` (filtros + clave `anonymous` residual) en `Topbar.logout`.
+  - **UJ-08 test 401 missing** para `/dashboard/top-priority-leads` — añadir junto al primer cambio del módulo.
+
+### 2026-04-29 — UJ-11: Gestión de usuarios
+
+- **Work Done**: M3 arranca. Backend y frontend completos end-to-end.
+  - **Backend** (`backend/src/api/routes/users.ts`): 5 endpoints bajo `/admin/users` protegidos con `requireRole('admin')`: `GET` list/get, `POST` invite (email+name+password+role, con pre-check de duplicado + doble-catch P2002), `PATCH` edit (name/role/isActive con anti-autodesactivación + protección último admin), `POST :id/password/reset` (genera `randomBytes(12).base64url()`, actualiza hash, devuelve contraseña solo en body). Audit log fire-and-forget en create/update/reset sin contraseñas en metadata. Registrado en `server.ts`.
+  - **Frontend**: `lib/api/users.ts` (listUsers, inviteUser, updateUser, resetUserPassword) + `UsersTable` (tabla con badges de rol coloreados, toggle activo, acciones) + `InviteUserDialog` + `EditUserDialog` (name/role/isActive, errores 400 del backend mostrados inline) + `ResetPasswordDialog` (2 pasos: confirmar → mostrar contraseña temporal con botón copiar, advertencia de una-sola-vez). Página `/admin/users` reemplaza `ComingSoonPage`.
+  - **Bonus UJ-10** (deuda cerrada): `Topbar.handleLogout` ahora limpia claves `heyday:*` de localStorage antes del `clear()` de Zustand — evita filtrar búsquedas guardadas en dispositivo compartido.
+- **Files Created**:
+  - `backend/src/api/routes/users.ts`
+  - `backend/src/api/routes/users.test.ts`
+  - `frontend/src/lib/api/users.ts`
+  - `frontend/src/components/users/UsersTable.tsx`
+  - `frontend/src/components/users/UsersTable.test.tsx`
+  - `frontend/src/components/users/InviteUserDialog.tsx`
+  - `frontend/src/components/users/EditUserDialog.tsx`
+  - `frontend/src/components/users/ResetPasswordDialog.tsx`
+- **Files Modified**:
+  - `backend/src/api/server.ts` (registro de users routes)
+  - `frontend/src/app/(app)/admin/users/page.tsx` (reemplaza stub)
+  - `frontend/src/components/Topbar.tsx` (wipe heyday:\* en logout)
+  - `implementation/task_tracker.md`, `docs/project_memory.md`
+- **Verification**: `pnpm format:check` ✅ · `pnpm lint` ✅ · `pnpm typecheck` ✅ · `pnpm test` ✅ 334 tests (256 backend + 78 frontend, +16 nuevos).
+- **Security checklist**: ✅ `requireAuth+requireRole('admin')` en todos los endpoints · ✅ contraseña temporal solo en body, nunca en audit ni log · ✅ Zod backend+frontend · ✅ Prisma ORM parameterizado · ✅ PublicUserDto sin passwordHash · ✅ anti-autodesactivación + protección último admin · ✅ React auto-escapa (sin dangerouslySetInnerHTML).

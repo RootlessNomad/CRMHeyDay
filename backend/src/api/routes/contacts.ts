@@ -7,6 +7,7 @@ import {
   ContactUpdateSchema,
   contactsService,
 } from '../../modules/contacts/index.js';
+import { gdprService } from '../../modules/gdpr/index.js';
 
 const IdParamsSchema = z.object({ id: z.string().min(1) });
 
@@ -49,4 +50,17 @@ export async function registerContactsRoutes(app: FastifyInstance): Promise<void
 
     return contactsService.anonymize(id, actorUserId, request.ip);
   });
+
+  app.get(
+    '/contacts/:id/data-export',
+    { preHandler: [app.requireAuth, app.requireRole('admin')] },
+    async (request, reply) => {
+      const { id } = IdParamsSchema.parse(request.params);
+      const data = await gdprService.exportContactData(id);
+      return reply
+        .header('Content-Disposition', `attachment; filename="contact-${id}-export.json"`)
+        .code(200)
+        .send(data);
+    },
+  );
 }

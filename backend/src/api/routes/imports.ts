@@ -26,15 +26,21 @@ export async function registerImportsRoutes(app: FastifyInstance): Promise<void>
         const actorUserId = req.authUser?.id;
         if (!actorUserId) throw importsApp.httpErrors.unauthorized();
         if (!req.isMultipart()) {
-          return reply.code(400).send({ error: 'missing_file' });
+          return reply
+            .code(400)
+            .send({ error: { code: 'missing_file', message: 'Falta el archivo CSV' } });
         }
 
         const data = await req.file();
         if (!data) {
-          return reply.code(400).send({ error: 'missing_file' });
+          return reply
+            .code(400)
+            .send({ error: { code: 'missing_file', message: 'Falta el archivo CSV' } });
         }
         if (!isAcceptedCsvUpload(data.filename, data.mimetype)) {
-          return reply.code(400).send({ error: 'invalid_file_type' });
+          return reply.code(400).send({
+            error: { code: 'invalid_file_type', message: 'Solo se admiten archivos .csv' },
+          });
         }
 
         const dryRun = (req.query as { dry_run?: string } | undefined)?.dry_run === 'true';
@@ -45,12 +51,22 @@ export async function registerImportsRoutes(app: FastifyInstance): Promise<void>
           return reply.code(200).send(await service.run(buffer, actorUserId, dryRun));
         } catch (err) {
           if (err instanceof ImportHeaderError) {
-            return reply
-              .code(422)
-              .send({ error: 'missing_required_headers', headers: err.headers });
+            return reply.code(422).send({
+              error: {
+                code: 'missing_required_headers',
+                message: 'Faltan cabeceras obligatorias en el CSV',
+                details: { headers: err.headers },
+              },
+            });
           }
           if (err instanceof ImportCapError) {
-            return reply.code(400).send({ error: 'too_many_rows', limit: 1000 });
+            return reply.code(400).send({
+              error: {
+                code: 'too_many_rows',
+                message: `El archivo supera el máximo de ${err.limit} filas permitido`,
+                details: { limit: err.limit },
+              },
+            });
           }
           throw err;
         }

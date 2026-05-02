@@ -143,7 +143,9 @@ describe('imports routes', () => {
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: 'missing_file' });
+    expect(res.json()).toEqual({
+      error: { code: 'missing_file', message: 'Falta el archivo CSV' },
+    });
   });
 
   it('400 con archivo .txt', async () => {
@@ -160,7 +162,9 @@ describe('imports routes', () => {
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: 'invalid_file_type' });
+    expect(res.json()).toEqual({
+      error: { code: 'invalid_file_type', message: 'Solo se admiten archivos .csv' },
+    });
   });
 
   it('422 con ImportHeaderError', async () => {
@@ -184,8 +188,11 @@ describe('imports routes', () => {
 
     expect(res.statusCode).toBe(422);
     expect(res.json()).toEqual({
-      error: 'missing_required_headers',
-      headers: ['Missing required header: name'],
+      error: {
+        code: 'missing_required_headers',
+        message: 'Faltan cabeceras obligatorias en el CSV',
+        details: { headers: ['Missing required header: name'] },
+      },
     });
   });
 
@@ -205,6 +212,12 @@ describe('imports routes', () => {
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: 'too_many_rows', limit: 1000 });
+    expect(res.json()).toEqual({
+      error: {
+        code: 'too_many_rows',
+        message: 'El archivo supera el máximo de 1000 filas permitido',
+        details: { limit: 1000 },
+      },
+    });
   });
 });

@@ -48,6 +48,18 @@ export interface RotateCredentialInput {
   actorUserId: string;
 }
 
+export interface HealthDto {
+  lastStatus: 'ok' | 'warn' | 'error' | 'unknown';
+  lastCheckedAt: Date | null;
+  lastError: string | null;
+  successCount24h: number;
+  errorCount24h: number;
+}
+
+export interface CredentialWithHealthDto extends CredentialPublicDto {
+  health: HealthDto | null;
+}
+
 export class CredentialNotFoundError extends Error {
   readonly code = 'CREDENTIAL_NOT_FOUND';
   constructor(idOrKey: string) {
@@ -76,6 +88,25 @@ function toPublic(c: Credential): CredentialPublicDto {
     lastRotatedAt: c.lastRotatedAt,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
+  };
+}
+
+function toHealth(
+  h: {
+    lastStatus: string;
+    lastCheckedAt: Date | null;
+    lastError: string | null;
+    successCount24h: number;
+    errorCount24h: number;
+  } | null,
+): HealthDto | null {
+  if (!h) return null;
+  return {
+    lastStatus: h.lastStatus as HealthDto['lastStatus'],
+    lastCheckedAt: h.lastCheckedAt,
+    lastError: h.lastError,
+    successCount24h: h.successCount24h,
+    errorCount24h: h.errorCount24h,
   };
 }
 
@@ -293,6 +324,22 @@ export class CredentialsService {
     }
 
     return count;
+  }
+
+  async listWithHealth(): Promise<CredentialWithHealthDto[]> {
+    const rows = await this.db.credential.findMany({
+      orderBy: { key: 'asc' },
+      include: { health: true },
+    });
+    return rows.map((r) => ({ ...toPublic(r), health: toHealth(r.health) }));
+  }
+
+  async getWithHealthById(id: string): Promise<CredentialWithHealthDto | null> {
+    const row = await this.db.credential.findUnique({
+      where: { id },
+      include: { health: true },
+    });
+    return row ? { ...toPublic(row), health: toHealth(row.health) } : null;
   }
 }
 

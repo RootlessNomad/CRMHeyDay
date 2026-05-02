@@ -14,6 +14,7 @@ import { AnonymizeContactDialog } from '@/components/contacts/AnonymizeContactDi
 import { ContactFormDialog } from '@/components/contacts/ContactFormDialog';
 import { DeleteContactDialog } from '@/components/contacts/DeleteContactDialog';
 import { getContact } from '@/lib/api/contacts';
+import { exportContactData } from '@/lib/api/gdpr';
 import { ApiError } from '@/lib/api/client';
 import type { ConsentStatus, ContactDto } from '@/types/contact';
 
@@ -265,6 +266,17 @@ export default function ContactDetailPage(): JSX.Element {
               Anonimizar
             </button>
           ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              exportContactData(contact.id).catch(() => {
+                toast.error('No se pudo exportar los datos del contacto.');
+              });
+            }}
+            className="border-border bg-surface-muted h-10 rounded-md border px-4 text-sm font-medium"
+          >
+            Exportar datos
+          </button>
           <button
             type="button"
             onClick={() => setDeleteOpen(true)}
