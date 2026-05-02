@@ -86,6 +86,19 @@ interface ErrorBody {
   details?: unknown;
 }
 
+function hasName(err: unknown, name: string): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'name' in err &&
+    (err as { name?: string }).name === name
+  );
+}
+
+function messageOf(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
+}
+
 function send(reply: FastifyReply, status: number, body: ErrorBody): FastifyReply {
   return reply.code(status).type('application/json').send({ error: body });
 }
@@ -93,12 +106,16 @@ function send(reply: FastifyReply, status: number, body: ErrorBody): FastifyRepl
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((err: unknown, req: FastifyRequest, reply: FastifyReply) => {
     // Zod: VALIDATION_ERROR con issues detalladas
-    if (err instanceof ZodError) {
+    if (err instanceof ZodError || hasName(err, 'ZodError')) {
+      const issues =
+        typeof err === 'object' && err !== null && 'issues' in err
+          ? (err as { issues?: unknown }).issues
+          : undefined;
       req.log.info({ code: ERROR_CODES.VALIDATION_ERROR }, 'validation failed');
       return send(reply, 400, {
         code: ERROR_CODES.VALIDATION_ERROR,
         message: 'Datos de entrada inválidos',
-        details: err.issues,
+        details: issues,
       });
     }
 
@@ -123,19 +140,33 @@ export function registerErrorHandler(app: FastifyInstance): void {
 
     if (
       err instanceof CompanyNotFoundError ||
+      hasName(err, 'CompanyNotFoundError') ||
       err instanceof ActivityNotFoundError ||
+      hasName(err, 'ActivityNotFoundError') ||
       err instanceof ActivityEntityNotFoundError ||
+      hasName(err, 'ActivityEntityNotFoundError') ||
       err instanceof TagNotFoundError ||
+      hasName(err, 'TagNotFoundError') ||
       err instanceof TagAssignmentEntityNotFoundError ||
+      hasName(err, 'TagAssignmentEntityNotFoundError') ||
       err instanceof ContactNotFoundError ||
+      hasName(err, 'ContactNotFoundError') ||
       err instanceof ContactCompanyNotFoundError ||
+      hasName(err, 'ContactCompanyNotFoundError') ||
       err instanceof PipelineNotFoundError ||
+      hasName(err, 'PipelineNotFoundError') ||
       err instanceof StageNotFoundError ||
+      hasName(err, 'StageNotFoundError') ||
       err instanceof LeadNotFoundError ||
+      hasName(err, 'LeadNotFoundError') ||
       err instanceof CredentialNotFoundError ||
+      hasName(err, 'CredentialNotFoundError') ||
       err instanceof JobNotFoundError
     ) {
-      return send(reply, 404, { code: ERROR_CODES.NOT_FOUND, message: err.message });
+      return send(reply, 404, {
+        code: ERROR_CODES.NOT_FOUND,
+        message: messageOf(err, 'Recurso no encontrado'),
+      });
     }
 
     if (

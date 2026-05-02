@@ -36,6 +36,7 @@ import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerGdprRoutes } from './routes/gdpr.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerImportsRoutes } from './routes/imports.js';
+import { registerIntelRoutes } from './routes/intel.js';
 import { registerJobsRoutes } from './routes/jobs.js';
 import { registerLeadsRoutes } from './routes/leads.js';
 import { registerPipelinesRoutes } from './routes/pipelines.js';
@@ -109,28 +110,27 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
 
   // ---- Plugins propios
   await app.register(authPlugin);
+  registerErrorHandler(app);
 
   // ---- Rutas
-  await registerHealthRoutes(app);
-  await registerDashboardRoutes(app);
+  await registerActivitiesRoutes(app);
+  await registerAdminRoutes(app);
   await registerAuthRoutes(app);
   await registerCompaniesRoutes(app);
-  await registerImportsRoutes(app);
   await registerContactsRoutes(app);
   await registerCredentialsRoutes(app);
+  await registerDashboardRoutes(app);
   await registerGdprRoutes(app);
-  await registerPipelinesRoutes(app);
-  await registerLeadsRoutes(app);
-  await registerActivitiesRoutes(app);
-  await registerTagsRoutes(app);
-  await registerSearchRoutes(app);
+  await registerHealthRoutes(app);
+  await registerImportsRoutes(app);
+  await registerIntelRoutes(app);
   await registerJobsRoutes(app);
-  await registerUsersRoutes(app);
-  await registerAdminRoutes(app);
+  await registerLeadsRoutes(app);
+  await registerPipelinesRoutes(app);
+  await registerSearchRoutes(app);
+  await registerTagsRoutes(app);
   await registerTaxonomiesRoutes(app);
-
-  // ---- Error handler (al final, tras las rutas)
-  registerErrorHandler(app);
+  await registerUsersRoutes(app);
 
   return app;
 }

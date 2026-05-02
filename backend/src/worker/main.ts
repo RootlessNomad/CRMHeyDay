@@ -18,6 +18,7 @@ import { closeRedis, redis, QUEUE_PREFIX } from '../core/queue/connection.js';
 import { markFailed, markRunning, markSucceeded } from '../core/queue/mirror.js';
 import { closeQueues } from '../core/queue/queues.js';
 import { QUEUE_NAMES, QUEUE_SCHEMAS, type JobResult, type QueueName } from '../core/queue/types.js';
+import { runEnrichment } from '../modules/intel/handler.js';
 
 const log = childLogger({ component: 'worker' });
 
@@ -31,11 +32,7 @@ type Handler<N extends QueueName> = (
 ) => Promise<JobResult>;
 
 const handlers: { [N in QueueName]: Handler<N> } = {
-  [QUEUE_NAMES.enrichment]: async (payload, ctx) => {
-    // TODO UJ-16: website scrape + APIs externas + pain points.
-    log.info({ jobId: ctx.jobId, queue: ctx.queue }, 'enrichment placeholder ejecutado');
-    return { ok: true, summary: { placeholder: true } };
-  },
+  [QUEUE_NAMES.enrichment]: async (payload) => runEnrichment(payload as never),
   [QUEUE_NAMES.contentGeneration]: async (payload, ctx) => {
     // TODO UJ-23: generar ContentVersion vía Anthropic.
     log.info({ jobId: ctx.jobId, queue: ctx.queue }, 'content_generation placeholder ejecutado');
