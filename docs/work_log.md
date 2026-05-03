@@ -15,6 +15,22 @@ Chronological record of all meaningful work. Each entry covers one infrastructur
 
 ---
 
+### 2026-05-02 — /review M4: Lead Intelligence (UJ-16→21)
+
+- **Verdict**: **PASS** — Ready for M5. No critical issues found.
+- **UJ-16 Investigar empresa por URL**: PASS. Backend: POST /intel/enrichment-runs (requireAuth + rateLimit 10/min), GET /:id, GET /companies/:id/enrichment. SSRF guard verified (IPv4/IPv6 private ranges + DNS lookup, robots.txt, 15s timeout). Frontend: /intel/research with StartResearchForm + EnrichmentRunCard polling + RecentRunsList. Security ✅.
+- **UJ-17 Bulk import CSV**: PASS. POST /intel/bulk-import (requireAuth, multipart 2MB, 100 rows, csv-parse). BulkImportForm with template download. File validation (extension + MIME). Security ✅.
+- **UJ-18 Revisar pain points**: PASS. CRUD /intel/pain-points (adminGuard). PainPointsTable with confidence filter, human_verified toggle, delete confirm. PainPointNotFoundError → 404. Security ✅.
+- **UJ-19 Service fit recommendations**: PASS-WITH-NOTES. GET + POST /intel/service-fit/regenerate (inline, not queued — intentional v1 deviation). ServiceFitList with cards, progress bar, regenerate button. Tab in company detail. Security ✅. Note: 30s timeout not tested.
+- **UJ-20 Outbound Prep**: PASS. GET/POST/PATCH /intel/outbound-prep (adminGuard). OutboundPrepCard: editable fields (onBlur PATCH), copy-all clipboard, regenerate. Tab "Outbound" in company detail. Admin view at /intel/outbound. Security ✅.
+- **UJ-21 Outbound → Task**: PASS. POST /intel/outbound-prep/:id/to-task (adminGuard). Creates Activity(task) linked to latest active lead (ownerId=lead.ownerId) or company. Button in OutboundPrepCard. Security ✅.
+- **Security summary**: requireAuth on all routes, requireRole('admin') on pain-points/service-fit/outbound-prep. SSRF prevention thorough. No credential leaks. hasName() duck-typing for cross-ESM error instanceof.
+- **Test counts**: 379 backend + 103 frontend = 482 total, 100% passing.
+- **Non-critical notes**: (1) inline regeneration acceptable v1; (2) admin intel pages not Next.js gated (backend enforces role); (3) 30s timeout scenarios untested.
+- **Next**: Advance to M5 — UJ-22 Generador de ideas.
+
+---
+
 ### 2026-05-02 — /review M3: Admin Panel
 
 **Verdict**: PASS-WITH-NOTES
