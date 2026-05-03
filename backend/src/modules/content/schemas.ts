@@ -93,6 +93,30 @@ export const ItemSummaryDtoSchema = z.object({
   created_at: z.string().datetime(),
 });
 
+export const CalendarQuerySchema = z.object({
+  from: z.string().date(),
+  to: z.string().date(),
+  channel: z.enum(['instagram', 'linkedin', 'newsletter']).optional(),
+  status: z.enum(['draft', 'in_review', 'approved', 'exported', 'archived']).optional(),
+  icp_vertical: z
+    .enum(['physiotherapy', 'pilates', 'yoga', 'gym_fitness', 'bakery', 'cafe', 'other'])
+    .optional(),
+});
+
+export const RescheduleBodySchema = z.object({
+  scheduled_for: z.string().date().nullable(),
+});
+
+export const CalendarItemDtoSchema = z.object({
+  id: z.string(),
+  channel: z.enum(['instagram', 'linkedin', 'newsletter']),
+  status: z.enum(['draft', 'in_review', 'approved', 'exported', 'archived']),
+  scheduled_for: z.string().date().nullable(),
+  idea_title: z.string(),
+  pillar_label: z.string(),
+  current_version_id: z.string().nullable(),
+});
+
 export type IdeaListQuery = z.infer<typeof IdeaListQuerySchema>;
 export type IdeaCreateManualInput = z.infer<typeof IdeaCreateManualSchema>;
 export type IdeaGenerateInput = z.infer<typeof IdeaGenerateSchema>;
@@ -102,6 +126,9 @@ export type DraftRequestInput = z.infer<typeof DraftRequestSchema>;
 export type IdeaDto = z.infer<typeof IdeaDtoSchema>;
 export type IdeaListResponse = z.infer<typeof IdeaListResponseSchema>;
 export type ItemSummaryDto = z.infer<typeof ItemSummaryDtoSchema>;
+export type CalendarQuery = z.infer<typeof CalendarQuerySchema>;
+export type RescheduleBody = z.infer<typeof RescheduleBodySchema>;
+export type CalendarItemDto = z.infer<typeof CalendarItemDtoSchema>;
 
 type IdeaRow = ContentIdea & {
   pillar: Pick<ContentPillar, 'id' | 'labelEs'>;

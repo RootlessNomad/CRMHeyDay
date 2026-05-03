@@ -69,6 +69,16 @@ export interface ItemSummaryDto {
   status: string;
 }
 
+export interface CalendarItemDto {
+  id: string;
+  channel: 'instagram' | 'linkedin' | 'newsletter';
+  status: 'draft' | 'in_review' | 'approved' | 'exported' | 'archived';
+  scheduled_for: string | null;
+  idea_title: string;
+  pillar_label: string;
+  current_version_id: string | null;
+}
+
 export interface IdeaCreateManualInput {
   title: string;
   angle: string;
@@ -226,6 +236,30 @@ export interface CreateVersionInput {
 
 export async function getContentItem(id: string): Promise<ContentItemDetailDto> {
   return apiFetch<ContentItemDetailDto>(`/content/items/${id}`);
+}
+
+export async function listCalendarItems(query: {
+  from: string;
+  to: string;
+  channel?: string;
+  status?: string;
+  icp_vertical?: string;
+}): Promise<CalendarItemDto[]> {
+  const params = new URLSearchParams({ from: query.from, to: query.to });
+  if (query.channel) params.set('channel', query.channel);
+  if (query.status) params.set('status', query.status);
+  if (query.icp_vertical) params.set('icp_vertical', query.icp_vertical);
+  return apiFetch<CalendarItemDto[]>(`/content/calendar?${params.toString()}`);
+}
+
+export async function rescheduleItem(
+  itemId: string,
+  scheduledFor: string | null,
+): Promise<CalendarItemDto> {
+  return apiFetch<CalendarItemDto>(`/content/items/${itemId}/schedule`, {
+    method: 'PATCH',
+    json: { scheduled_for: scheduledFor },
+  });
 }
 
 export async function createVersion(

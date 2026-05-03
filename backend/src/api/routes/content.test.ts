@@ -27,6 +27,8 @@ const submitForReviewMock = vi.fn();
 const approveItemMock = vi.fn();
 const rejectItemMock = vi.fn();
 const listPendingReviewsMock = vi.fn();
+const listCalendarItemsMock = vi.fn();
+const rescheduleItemMock = vi.fn();
 const getUserForTokenMock = vi.fn();
 
 vi.mock('../../core/queue/connection.js', () => ({ redis: null }));
@@ -121,6 +123,28 @@ vi.mock('../../modules/content/index.js', () => {
           })
           .parse(value),
     },
+    CalendarQuerySchema: {
+      parse: (value: unknown) =>
+        z
+          .object({
+            from: z.string().date(),
+            to: z.string().date(),
+            channel: z.enum(['instagram', 'linkedin', 'newsletter']).optional(),
+            status: z.enum(['draft', 'in_review', 'approved', 'exported', 'archived']).optional(),
+            icp_vertical: z
+              .enum(['physiotherapy', 'pilates', 'yoga', 'gym_fitness', 'bakery', 'cafe', 'other'])
+              .optional(),
+          })
+          .parse(value),
+    },
+    RescheduleBodySchema: {
+      parse: (value: unknown) =>
+        z
+          .object({
+            scheduled_for: z.string().date().nullable(),
+          })
+          .parse(value),
+    },
     ReviewsListQuerySchema: {
       parse: (value: unknown) =>
         z
@@ -149,6 +173,8 @@ vi.mock('../../modules/content/index.js', () => {
       approveItem: approveItemMock,
       rejectItem: rejectItemMock,
       listPendingReviews: listPendingReviewsMock,
+      listCalendarItems: listCalendarItemsMock,
+      rescheduleItem: rescheduleItemMock,
     },
   };
 });
@@ -362,6 +388,26 @@ describe('content routes', () => {
       limit: 20,
       offset: 0,
     });
+    listCalendarItemsMock.mockResolvedValue([
+      {
+        id: 'item_1',
+        channel: 'instagram',
+        status: 'draft',
+        scheduled_for: '2026-05-05',
+        idea_title: 'Idea 1',
+        pillar_label: 'Educacion',
+        current_version_id: 'version_2',
+      },
+    ]);
+    rescheduleItemMock.mockResolvedValue({
+      id: 'item_1',
+      channel: 'instagram',
+      status: 'draft',
+      scheduled_for: '2026-05-09',
+      idea_title: 'Idea 1',
+      pillar_label: 'Educacion',
+      current_version_id: 'version_2',
+    });
     const server = await import('../server.js');
     app = await server.buildApp({ disableRateLimit: true });
     token = signAccessToken({ sub: ADMIN.id, role: 'admin', sid: 'ses_content_routes' });
@@ -404,6 +450,25 @@ describe('content routes', () => {
     const res = await authInject(app, token, { method: 'GET', url: '/content/ideas' });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ total: 1, items: [{ id: 'idea_1' }] });
+  });
+
+  it('GET /content/calendar returns 200 with array', async () => {
+    const res = await authInject(app, token, {
+      method: 'GET',
+      url: '/content/calendar?from=2026-05-01&to=2026-05-31',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject([{ id: 'item_1', idea_title: 'Idea 1' }]);
+  });
+
+  it('GET /content/calendar without auth returns 401', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/content/calendar?from=2026-05-01&to=2026-05-31',
+    });
+
+    expect(res.statusCode).toBe(401);
   });
 
   it('GET /content/ideas/:id inexistente -> 404', async () => {
@@ -454,6 +519,18 @@ describe('content routes', () => {
 
     const res = await authInject(app, token, { method: 'GET', url: '/content/items/missing' });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('PATCH /content/items/:id/schedule returns 200 with updated item', async () => {
+    const res = await authInject(app, token, {
+      method: 'PATCH',
+      url: '/content/items/item_1/schedule',
+      payload: { scheduled_for: '2026-05-09' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: 'item_1', scheduled_for: '2026-05-09' });
+    expect(rescheduleItemMock).toHaveBeenCalledWith('item_1', '2026-05-09', ADMIN.id);
   });
 
   it('POST /content/items/:id/versions -> 201 con ContentVersionDto', async () => {

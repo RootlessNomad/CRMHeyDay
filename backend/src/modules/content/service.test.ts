@@ -114,6 +114,36 @@ function buildPrisma() {
       deletedAt: new Date('2026-05-01T10:00:00.000Z'),
     },
     {
+      id: 'item_3',
+      ideaId: 'idea_2',
+      channel: 'linkedin' as const,
+      status: 'approved',
+      scheduledFor: new Date('2026-05-10T00:00:00.000Z'),
+      currentVersionId: null,
+      approvedById: 'user_9',
+      approvedAt: new Date('2026-05-03T09:00:00.000Z'),
+      exportedAt: null,
+      createdById: 'user_2',
+      createdAt: new Date('2026-05-03T08:00:00.000Z'),
+      updatedAt: new Date('2026-05-03T08:00:00.000Z'),
+      deletedAt: null as Date | null,
+    },
+    {
+      id: 'item_4',
+      ideaId: 'idea_1',
+      channel: 'newsletter' as const,
+      status: 'draft',
+      scheduledFor: new Date('2026-05-15T00:00:00.000Z'),
+      currentVersionId: null,
+      approvedById: null,
+      approvedAt: null,
+      exportedAt: null,
+      createdById: 'user_1',
+      createdAt: new Date('2026-05-04T08:00:00.000Z'),
+      updatedAt: new Date('2026-05-04T08:00:00.000Z'),
+      deletedAt: null as Date | null,
+    },
+    {
       id: 'item_empty',
       ideaId: 'idea_1',
       channel: 'newsletter' as const,
@@ -228,6 +258,29 @@ function buildPrisma() {
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime()),
   });
 
+  const buildCalendarItem = (item: ItemRow) => {
+    const idea = ideas.find((candidate) => candidate.id === item.ideaId);
+    if (!idea) throw new Error(`Idea ${item.ideaId} not found`);
+
+    return {
+      id: item.id,
+      channel: item.channel,
+      status: item.status as 'draft' | 'in_review' | 'approved' | 'exported' | 'archived',
+      scheduledFor: item.scheduledFor,
+      currentVersion:
+        item.currentVersionId === null
+          ? null
+          : (() => {
+              const version = versions.find((candidate) => candidate.id === item.currentVersionId);
+              return version ? { id: version.id } : null;
+            })(),
+      idea: {
+        title: idea.title,
+        pillar: { labelEs: idea.pillar.labelEs },
+      },
+    };
+  };
+
   const prisma = {
     contentPillar: {
       findUniqueOrThrow: vi.fn(async ({ where }: { where: { id: string } }) => {
@@ -335,6 +388,7 @@ function buildPrisma() {
           if (!item) return null;
           if (!include) return item;
           if ('approvalEvents' in include) return buildItemWithApprovals(item);
+          if ('idea' in include && !('versions' in include)) return buildCalendarItem(item);
           return buildItemDetail(item);
         },
       ),
@@ -354,22 +408,53 @@ function buildPrisma() {
       findMany: vi.fn(
         async ({
           where,
+          include,
           take,
           skip,
         }: {
-          where?: { status?: string; deletedAt?: null };
+          where?: {
+            status?: string;
+            deletedAt?: null;
+            channel?: 'instagram' | 'linkedin' | 'newsletter';
+            scheduledFor?: { gte: Date; lte: Date };
+            idea?: { icpVertical?: string };
+          };
+          include?: Record<string, unknown>;
           take?: number;
           skip?: number;
         }) =>
           items
             .filter((item) => {
               if (where?.status && item.status !== where.status) return false;
+              if (where?.channel && item.channel !== where.channel) return false;
               if (where?.deletedAt === null && item.deletedAt !== null) return false;
+              if (where?.scheduledFor) {
+                if (!item.scheduledFor) return false;
+                if (item.scheduledFor < where.scheduledFor.gte) return false;
+                if (item.scheduledFor > where.scheduledFor.lte) return false;
+              }
+              if (where?.idea?.icpVertical) {
+                const idea = ideas.find((candidate) => candidate.id === item.ideaId);
+                if (!idea || idea.icpVertical !== where.idea.icpVertical) return false;
+              }
               return true;
             })
-            .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+            .sort((left, right) => {
+              if (where?.scheduledFor) {
+                return (left.scheduledFor?.getTime() ?? 0) - (right.scheduledFor?.getTime() ?? 0);
+              }
+              return left.createdAt.getTime() - right.createdAt.getTime();
+            })
             .slice(skip ?? 0, (skip ?? 0) + (take ?? items.length))
-            .map(buildItemWithApprovals),
+            .map((item) => {
+              if (include && 'approvalEvents' in include) {
+                return buildItemWithApprovals(item);
+              }
+              if (include && 'idea' in include && !('versions' in include)) {
+                return buildCalendarItem(item);
+              }
+              return buildItemWithApprovals(item);
+            }),
       ),
       count: vi.fn(
         async ({ where }: { where?: { status?: string; deletedAt?: null } }) =>
@@ -386,6 +471,8 @@ function buildPrisma() {
           if ('currentVersionId' in data)
             item.currentVersionId = data['currentVersionId'] as string;
           if ('status' in data) item.status = data['status'] as string;
+          if ('scheduledFor' in data)
+            item.scheduledFor = (data['scheduledFor'] as Date | null | undefined) ?? null;
           if ('approvedById' in data)
             item.approvedById = (data['approvedById'] as string | null) ?? null;
           if ('approvedAt' in data) item.approvedAt = (data['approvedAt'] as Date | null) ?? null;
@@ -599,6 +686,66 @@ describe('ContentService', () => {
 
   it('getItemById ignora soft-deleted', async () => {
     await expect(service.getItemById('item_2')).rejects.toBeInstanceOf(ItemNotFoundError);
+  });
+
+  it('listCalendarItems returns items in date range', async () => {
+    const result = await service.listCalendarItems({ from: '2026-05-01', to: '2026-05-12' });
+
+    expect(result.map((item) => item.id)).toEqual(['item_1', 'item_3']);
+    expect(result[0]).toMatchObject({
+      idea_title: 'Idea One',
+      pillar_label: 'Educacion',
+      current_version_id: 'version_3',
+    });
+  });
+
+  it('listCalendarItems filters by channel', async () => {
+    const result = await service.listCalendarItems({
+      from: '2026-05-01',
+      to: '2026-05-31',
+      channel: 'newsletter',
+    });
+
+    expect(result.map((item) => item.id)).toEqual(['item_4']);
+  });
+
+  it('listCalendarItems filters by status', async () => {
+    const result = await service.listCalendarItems({
+      from: '2026-05-01',
+      to: '2026-05-31',
+      status: 'approved',
+    });
+
+    expect(result.map((item) => item.id)).toEqual(['item_3']);
+  });
+
+  it('rescheduleItem updates scheduledFor', async () => {
+    const result = await service.rescheduleItem('item_1', '2026-05-20', 'user_7');
+
+    expect(result.scheduled_for).toBe('2026-05-20');
+    expect(
+      prismaState.items.find((item) => item.id === 'item_1')?.scheduledFor?.toISOString(),
+    ).toBe('2026-05-20T00:00:00.000Z');
+    expect(audit.record).toHaveBeenCalledWith({
+      actorUserId: 'user_7',
+      action: 'content.item.rescheduled',
+      entityType: 'ContentItem',
+      entityId: 'item_1',
+      metadata: { itemId: 'item_1', scheduledFor: '2026-05-20' },
+    });
+  });
+
+  it('rescheduleItem with null clears scheduledFor', async () => {
+    const result = await service.rescheduleItem('item_1', null, 'user_7');
+
+    expect(result.scheduled_for).toBeNull();
+    expect(prismaState.items.find((item) => item.id === 'item_1')?.scheduledFor).toBeNull();
+  });
+
+  it('rescheduleItem nonexistent item throws ItemNotFoundError', async () => {
+    await expect(service.rescheduleItem('missing', '2026-05-20', 'user_7')).rejects.toBeInstanceOf(
+      ItemNotFoundError,
+    );
   });
 
   it('updateIdea ok', async () => {

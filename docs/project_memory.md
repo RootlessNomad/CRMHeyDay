@@ -3,9 +3,9 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: **M4 cerrado ✅ (6/6 UJ)**. Pendiente `/review` M4. 482 tests totales (379 backend + 103 frontend). Next: M5 Content Engine.
-- **Last Completed**: **UJ-21 Outbound → Task** — POST /intel/outbound-prep/:id/to-task. Toda la cadena M4 completada y comprometida (UJ-16→21).
-- **Next Step**: `/review` M4 → si pasa, arrancar **UJ-22 Generador de ideas** (POST /content/ideas + frontend /content/ideas).
+- **Phase**: **M5 Content Engine — 5/6 UJ completados**. UJ-22→26 cerrados. Pendiente UJ-27 Exportar + biblioteca → `/review` M5 → delivery.
+- **Last Completed**: **UJ-26 Calendario editorial** — GET /content/calendar + PATCH /content/items/:id/schedule + vista mensual custom + CalendarItemBadge. 568 tests totales (447 backend + 121 frontend).
+- **Next Step**: **UJ-27 Exportar + biblioteca** (export CSV/JSON de items, biblioteca de contenido reutilizable, sanear formula injection antes de exportar).
 
 ## Estado verificable
 
@@ -14,7 +14,7 @@
 | `pnpm format:check` (root)   |   ✅   |
 | `pnpm lint` (root)           |   ✅   |
 | `pnpm typecheck` (3 ws)      |   ✅   |
-| `pnpm test` (482 tests)      |   ✅   |
+| `pnpm test` (568 tests)      |   ✅   |
 | Repo `.git` inicializado     |   ✅   |
 | CI GitHub Actions definido   |   ✅   |
 | Seed demo type-clean         |   ✅   |
@@ -161,14 +161,25 @@ Ver `docs/decision_log.md` (11 decisiones de Planning) y entradas relevantes del
 - **Tab "Outbound" en /intel/outbound page**: búsqueda simplificada por ID/nombre — no autocomplete completo. Suficiente para admin v1.
 - **createOutreachTask asigna al lead más reciente**: política simple (last createdAt, status != lost). Si emerge necesidad de picker, añadir en UJ futuro.
 
+## Progreso M5
+
+| UJ                           | Estado       |
+| ---------------------------- | ------------ |
+| UJ-22 Generador de ideas     | ✅ completed |
+| UJ-23 Borradores multi-canal | ✅ completed |
+| UJ-24 Editor con versiones   | ✅ completed |
+| UJ-25 Flujo de aprobación    | ✅ completed |
+| UJ-26 Calendario editorial   | ✅ completed |
+| UJ-27 Exportar + biblioteca  | ⏳ pending   |
+
 ## Pasos para la siguiente sesión
 
 1. `/session-start`
-2. **`/review` M4** — verificar los 6 UJs de Lead Intelligence.
-3. Si review pasa → **UJ-22 Generador de ideas** (POST /content/ideas + frontend /content/ideas). Ver spec en user_journeys.md.
-4. **Deuda operativa (no bloquea M5)**:
+2. **UJ-27 Exportar + biblioteca** — ver spec en user_journeys.md. Recordar: sanear formula injection en CSV antes de exportar (deuda UJ-07).
+3. Tras UJ-27 → **`/review` M5** — verificar los 6 UJs de Content Engine.
+4. Si review pasa → delivery (seed demo completo, golden paths, auditoría holística).
+5. **Deuda operativa (no bloquea UJ-27)**:
    - Migración Prisma `add_contact_anonymized_at` (deuda UJ-03, requiere docker).
    - Conectar repo a GitHub para activar CI.
    - Refactor `act()` warnings en `LeadFormDialog.test.tsx`.
    - Test 401 para `/dashboard/top-priority-leads`.
-   - Sanear CSV formula injection antes de UJ-27.

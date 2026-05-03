@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { CalendarQuerySchema, RescheduleBodySchema } from '../../modules/content/schemas.js';
 import {
   ApprovalTransitionBodySchema,
   ConflictError,
@@ -45,6 +46,12 @@ export async function registerContentRoutes(app: FastifyInstance): Promise<void>
     const query = IdeaListQuerySchema.parse(request.query);
     const result = await contentService.listIdeas(query);
     return reply.code(200).send(result);
+  });
+
+  app.get('/content/calendar', authGuard, async (request, reply) => {
+    const query = CalendarQuerySchema.parse(request.query);
+    const items = await contentService.listCalendarItems(query);
+    return reply.code(200).send(items);
   });
 
   app.post('/content/ideas', authGuard, async (request, reply) => {
@@ -120,6 +127,20 @@ export async function registerContentRoutes(app: FastifyInstance): Promise<void>
     const { id } = ItemIdParamsSchema.parse(request.params);
     try {
       const item = await contentService.getItemById(id);
+      return reply.code(200).send(item);
+    } catch (error) {
+      rethrowContentError(app, error);
+    }
+  });
+
+  app.patch('/content/items/:id/schedule', authGuard, async (request, reply) => {
+    const { id } = ItemIdParamsSchema.parse(request.params);
+    const body = RescheduleBodySchema.parse(request.body);
+    const actorUserId = request.authUser?.id;
+    if (!actorUserId) throw app.httpErrors.unauthorized();
+
+    try {
+      const item = await contentService.rescheduleItem(id, body.scheduled_for, actorUserId);
       return reply.code(200).send(item);
     } catch (error) {
       rethrowContentError(app, error);

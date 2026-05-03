@@ -5,6 +5,8 @@ import { prisma as defaultPrisma } from '../../core/prisma/client.js';
 import type { PayloadForQueue, QueueName } from '../../core/queue/types.js';
 import { auditService, type AuditService } from '../audit/index.js';
 import type {
+  CalendarItemDto,
+  CalendarQuery,
   ContentItemWithApprovalsDto,
   ContentItemDetailDto,
   ContentVersionDto,
@@ -72,6 +74,25 @@ function toItemSummaryDto(row: {
     status: row.status,
     current_version_id: row.currentVersionId,
     created_at: row.createdAt.toISOString(),
+  };
+}
+
+function toCalendarItemDto(row: {
+  id: string;
+  channel: 'instagram' | 'linkedin' | 'newsletter';
+  status: 'draft' | 'in_review' | 'approved' | 'exported' | 'archived';
+  scheduledFor: Date | null;
+  currentVersion: { id: string } | null;
+  idea: { title: string; pillar: { labelEs: string } };
+}): CalendarItemDto {
+  return {
+    id: row.id,
+    channel: row.channel,
+    status: row.status,
+    scheduled_for: row.scheduledFor ? row.scheduledFor.toISOString().slice(0, 10) : null,
+    idea_title: row.idea.title,
+    pillar_label: row.idea.pillar.labelEs,
+    current_version_id: row.currentVersion?.id ?? null,
   };
 }
 
@@ -279,6 +300,81 @@ export class ContentService {
     });
     if (!row) throw new ItemNotFoundError(id);
     return this.toDetailDto(row);
+  }
+
+  async listCalendarItems(query: CalendarQuery): Promise<CalendarItemDto[]> {
+    const items = await this.db.contentItem.findMany({
+      where: {
+        deletedAt: null,
+        scheduledFor: {
+          gte: new Date(query.from),
+          lte: new Date(query.to),
+        },
+        ...(query.channel ? { channel: query.channel } : {}),
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.icp_vertical ? { idea: { icpVertical: query.icp_vertical } } : {}),
+      },
+      include: {
+        idea: {
+          include: {
+            pillar: {
+              select: { labelEs: true },
+            },
+          },
+        },
+        currentVersion: {
+          select: { id: true },
+        },
+      },
+      orderBy: { scheduledFor: 'asc' },
+    });
+
+    return items.map(toCalendarItemDto);
+  }
+
+  async rescheduleItem(
+    itemId: string,
+    scheduledFor: string | null,
+    actorUserId: string,
+  ): Promise<CalendarItemDto> {
+    const existing = await this.db.contentItem.findFirst({
+      where: { id: itemId, deletedAt: null },
+    });
+    if (!existing) throw new ItemNotFoundError(itemId);
+
+    await this.db.contentItem.update({
+      where: { id: itemId },
+      data: {
+        scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
+      },
+    });
+
+    await this.audit.record({
+      actorUserId,
+      action: 'content.item.rescheduled',
+      entityType: 'ContentItem',
+      entityId: itemId,
+      metadata: { itemId, scheduledFor },
+    });
+
+    const updated = await this.db.contentItem.findFirst({
+      where: { id: itemId, deletedAt: null },
+      include: {
+        idea: {
+          include: {
+            pillar: {
+              select: { labelEs: true },
+            },
+          },
+        },
+        currentVersion: {
+          select: { id: true },
+        },
+      },
+    });
+    if (!updated) throw new ItemNotFoundError(itemId);
+
+    return toCalendarItemDto(updated);
   }
 
   async updateIdea(id: string, input: IdeaUpdateInput, actorUserId: string): Promise<IdeaDto> {
