@@ -1,7 +1,19 @@
-import type { Company, EnrichmentRun, EnrichmentSourceHit, PrismaClient } from '@prisma/client';
+import type {
+  Company,
+  EnrichmentRun,
+  EnrichmentSourceHit,
+  PainPoint,
+  PainPointCategory,
+  PrismaClient,
+} from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { IntelNotFoundError, IntelService, IntelValidationError } from './service.js';
+import {
+  IntelNotFoundError,
+  IntelService,
+  IntelValidationError,
+  PainPointNotFoundError,
+} from './service.js';
 
 const { enqueueMock } = vi.hoisted(() => ({ enqueueMock: vi.fn() }));
 
@@ -70,13 +82,70 @@ function makeSourceHit(overrides: Partial<EnrichmentSourceHit> = {}): Enrichment
   };
 }
 
+function makePainPointCategory(overrides: Partial<PainPointCategory> = {}): PainPointCategory {
+  const now = new Date('2026-05-02T10:00:00.000Z');
+  return {
+    id: 'category_1',
+    key: 'late_replies',
+    labelEs: 'Respuestas tardías',
+    descriptionEs: 'Demora al responder clientes.',
+    defaultServiceRecommendations: [],
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+function makePainPoint(overrides: Partial<PainPoint> = {}): PainPoint {
+  const now = new Date('2026-05-02T10:00:00.000Z');
+  return {
+    id: 'pain_point_1',
+    companyId: 'company_1',
+    categoryId: 'category_1',
+    confidence: 'observed',
+    evidenceText: 'Whatsapp sin respuesta en 48h',
+    evidenceSourceUrl: 'https://acme.test/reviews',
+    evidenceSourceHitId: null,
+    evidenceTimestamp: now,
+    detectedBy: 'claude',
+    humanVerified: false,
+    verifiedById: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
 function buildPrisma() {
   const companies = [makeCompany()];
   const runs = [makeRun()];
+  const categories = [makePainPointCategory()];
+  const painPoints = [
+    makePainPoint(),
+    makePainPoint({ id: 'pain_point_2', confidence: 'inferred' }),
+  ];
   let companySeq = 0;
   let runSeq = 0;
+  let painPointSeq = painPoints.length;
+
+  const withRelations = (row: PainPoint) => ({
+    ...row,
+    company: { name: companies.find((item) => item.id === row.companyId)?.name ?? 'Unknown' },
+    category: (() => {
+      const category =
+        categories.find((item) => item.id === row.categoryId) ?? makePainPointCategory();
+      return { id: category.id, key: category.key, labelEs: category.labelEs };
+    })(),
+  });
 
   const prisma = {
+    $transaction: vi.fn(async (input: unknown) => {
+      if (typeof input === 'function') {
+        return input(prisma as never);
+      }
+      return Promise.all(input as Promise<unknown>[]);
+    }),
     company: {
       findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
         if (where['id'])
@@ -126,14 +195,112 @@ function buildPrisma() {
       ]),
     },
     painPoint: {
-      count: vi.fn(async () => 3),
+      findMany: vi.fn(
+        async ({
+          where,
+          skip = 0,
+          take = painPoints.length,
+        }: {
+          where?: Record<string, unknown>;
+          skip?: number;
+          take?: number;
+        }) => {
+          const filtered = painPoints.filter((row) => {
+            if (where?.['companyId'] && row.companyId !== where['companyId']) return false;
+            if (where?.['confidence'] && row.confidence !== where['confidence']) return false;
+            if (where?.['categoryId'] && row.categoryId !== where['categoryId']) return false;
+            if (
+              where?.['humanVerified'] !== undefined &&
+              row.humanVerified !== where['humanVerified']
+            ) {
+              return false;
+            }
+            return true;
+          });
+          return filtered.slice(skip, skip + take).map(withRelations);
+        },
+      ),
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+        return painPoints.find((row) => row.id === where.id) ?? null;
+      }),
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        painPointSeq += 1;
+        const row = makePainPoint({
+          id: `pain_point_${painPointSeq}`,
+          companyId: data['companyId'] as string,
+          categoryId: data['categoryId'] as string,
+          confidence: data['confidence'] as PainPoint['confidence'],
+          evidenceText: data['evidenceText'] as string,
+          evidenceSourceUrl: (data['evidenceSourceUrl'] as string | null) ?? null,
+          evidenceTimestamp: data['evidenceTimestamp'] as Date,
+          detectedBy: data['detectedBy'] as PainPoint['detectedBy'],
+          humanVerified: false,
+          verifiedById: null,
+        });
+        painPoints.push(row);
+        return withRelations(row);
+      }),
+      update: vi.fn(
+        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+          const row = painPoints.find((item) => item.id === where.id);
+          if (!row) throw new Error('missing');
+          if (data['humanVerified'] !== undefined) {
+            row.humanVerified = data['humanVerified'] as boolean;
+          }
+          if (data['verifiedBy']) {
+            const verifiedBy = data['verifiedBy'] as
+              | { connect?: { id: string }; disconnect?: boolean }
+              | undefined;
+            row.verifiedById = verifiedBy?.connect?.id ?? null;
+          }
+          if (data['evidenceText'] !== undefined) row.evidenceText = data['evidenceText'] as string;
+          if (data['evidenceSourceUrl'] !== undefined) {
+            row.evidenceSourceUrl = (data['evidenceSourceUrl'] as string | null) ?? null;
+          }
+          if (data['confidence'] !== undefined) {
+            row.confidence = data['confidence'] as PainPoint['confidence'];
+          }
+          row.updatedAt = new Date('2026-05-02T10:05:00.000Z');
+          return withRelations(row);
+        },
+      ),
+      delete: vi.fn(async ({ where }: { where: { id: string } }) => {
+        const index = painPoints.findIndex((row) => row.id === where.id);
+        if (index === -1) throw new Error('missing');
+        const [deleted] = painPoints.splice(index, 1);
+        return deleted;
+      }),
+      count: vi.fn(async ({ where }: { where?: Record<string, unknown> } = {}) => {
+        if (where?.['createdAt']) return 3;
+        return painPoints.filter((row) => {
+          if (where?.['companyId'] && row.companyId !== where['companyId']) return false;
+          if (where?.['confidence'] && row.confidence !== where['confidence']) return false;
+          if (where?.['categoryId'] && row.categoryId !== where['categoryId']) return false;
+          if (
+            where?.['humanVerified'] !== undefined &&
+            row.humanVerified !== where['humanVerified']
+          ) {
+            return false;
+          }
+          return true;
+        }).length;
+      }),
+    },
+    painPointCategory: {
+      findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        return (
+          categories.find(
+            (item) => item.id === where['id'] && item.isActive === (where['isActive'] ?? true),
+          ) ?? null
+        );
+      }),
     },
     serviceFitRecommendation: {
       count: vi.fn(async () => 1),
     },
   } as unknown as PrismaClient;
 
-  return { prisma, companies, runs };
+  return { prisma, companies, runs, painPoints, categories };
 }
 
 describe('IntelService', () => {
@@ -345,5 +512,107 @@ describe('IntelService', () => {
     expect(result.count).toBe(1);
     expect(result.runIds).toEqual(['run_new_1']);
     expect(result.errors).toEqual([{ row: 1, message: 'El campo name es obligatorio.' }]);
+  });
+
+  it('listPainPoints filtra por confidence', async () => {
+    const { prisma } = buildPrisma();
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    const result = await service.listPainPoints({
+      confidence: 'observed',
+      limit: 50,
+      offset: 0,
+    });
+
+    expect(result.total).toBe(1);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      id: 'pain_point_1',
+      confidence: 'observed',
+      company_name: 'ACME',
+      category_key: 'late_replies',
+    });
+  });
+
+  it('createPainPoint crea con detectedBy human', async () => {
+    const { prisma, painPoints } = buildPrisma();
+    const audit = { record: vi.fn(async () => {}) };
+    const service = new IntelService(prisma, audit as never);
+
+    const result = await service.createPainPoint(
+      {
+        company_id: 'company_1',
+        category_id: 'category_1',
+        confidence: 'speculative',
+        evidence_text: 'Formulario de contacto roto',
+        evidence_source_url: 'https://acme.test/contacto',
+      },
+      'user_7',
+    );
+
+    expect(result.detected_by).toBe('human');
+    expect(painPoints.at(-1)?.detectedBy).toBe('human');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: 'user_7',
+        action: 'pain_point.created',
+      }),
+    );
+  });
+
+  it('updatePainPoint marca human_verified con verified_by_id', async () => {
+    const { prisma } = buildPrisma();
+    const audit = { record: vi.fn(async () => {}) };
+    const service = new IntelService(prisma, audit as never);
+
+    const result = await service.updatePainPoint(
+      'pain_point_1',
+      { human_verified: true, confidence: 'inferred' },
+      'user_9',
+    );
+
+    expect(result.human_verified).toBe(true);
+    expect(result.verified_by_id).toBe('user_9');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'pain_point.updated',
+        metadata: { fields: ['human_verified', 'confidence'] },
+      }),
+    );
+  });
+
+  it('updatePainPoint 404', async () => {
+    const { prisma } = buildPrisma();
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    await expect(
+      service.updatePainPoint('pain_point_missing', { human_verified: true }, 'user_1'),
+    ).rejects.toBeInstanceOf(PainPointNotFoundError);
+  });
+
+  it('deletePainPoint ok', async () => {
+    const { prisma, painPoints } = buildPrisma();
+    const audit = { record: vi.fn(async () => {}) };
+    const service = new IntelService(prisma, audit as never);
+
+    await service.deletePainPoint('pain_point_1', 'user_3');
+
+    expect(painPoints.map((item) => item.id)).not.toContain('pain_point_1');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: 'user_3',
+        action: 'pain_point.deleted',
+        entityId: 'pain_point_1',
+      }),
+    );
+  });
+
+  it('deletePainPoint 404', async () => {
+    const { prisma } = buildPrisma();
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    await expect(service.deletePainPoint('pain_point_missing', 'user_1')).rejects.toBeInstanceOf(
+      PainPointNotFoundError,
+    );
   });
 });

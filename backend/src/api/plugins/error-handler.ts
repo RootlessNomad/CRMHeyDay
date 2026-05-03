@@ -55,6 +55,7 @@ import {
   ContactNotFoundError,
   ContactPrimaryConflictError,
 } from '../../modules/contacts/service.js';
+import { PainPointNotFoundError } from '../../modules/intel/service.js';
 import {
   InvalidLeadTransitionError,
   LeadCompanyMismatchError,
@@ -153,6 +154,8 @@ export function registerErrorHandler(app: FastifyInstance): void {
       hasName(err, 'ContactNotFoundError') ||
       err instanceof ContactCompanyNotFoundError ||
       hasName(err, 'ContactCompanyNotFoundError') ||
+      err instanceof PainPointNotFoundError ||
+      hasName(err, 'PainPointNotFoundError') ||
       err instanceof PipelineNotFoundError ||
       hasName(err, 'PipelineNotFoundError') ||
       err instanceof StageNotFoundError ||

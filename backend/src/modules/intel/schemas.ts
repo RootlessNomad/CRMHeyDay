@@ -44,6 +44,54 @@ export const EnrichmentRunDtoSchema = z.object({
   service_fits_created_count: z.number().int().nonnegative().optional(),
 });
 
+export const PainPointConfidenceSchema = z.enum(['observed', 'inferred', 'speculative']);
+
+export const PainPointListQuerySchema = z.object({
+  company_id: z.string().min(1).optional(),
+  confidence: PainPointConfidenceSchema.optional(),
+  category_id: z.string().min(1).optional(),
+  human_verified: z.coerce.boolean().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export const PainPointCreateSchema = z.object({
+  company_id: z.string().min(1),
+  category_id: z.string().min(1),
+  confidence: PainPointConfidenceSchema,
+  evidence_text: z.string().trim().min(1),
+  evidence_source_url: z.string().url().optional(),
+});
+
+export const PainPointUpdateSchema = z
+  .object({
+    human_verified: z.boolean().optional(),
+    evidence_text: z.string().trim().min(1).optional(),
+    evidence_source_url: z.string().url().nullable().optional(),
+    confidence: PainPointConfidenceSchema.optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'Debe proporcionarse al menos un campo para actualizar',
+  });
+
+export const PainPointDtoSchema = z.object({
+  id: z.string(),
+  company_id: z.string(),
+  company_name: z.string(),
+  category_id: z.string(),
+  category_key: z.string(),
+  category_label_es: z.string(),
+  confidence: PainPointConfidenceSchema,
+  evidence_text: z.string(),
+  evidence_source_url: z.string().nullable(),
+  evidence_timestamp: z.string().datetime(),
+  detected_by: z.enum(['rule', 'claude', 'human']),
+  human_verified: z.boolean(),
+  verified_by_id: z.string().nullable(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+
 export const BulkImportErrorSchema = z.object({
   row: z.number().int().positive(),
   message: z.string().min(1),
@@ -61,3 +109,7 @@ export type EnrichmentRunDto = z.infer<typeof EnrichmentRunDtoSchema>;
 export type EnrichmentSourceHitDto = z.infer<typeof EnrichmentSourceHitDtoSchema>;
 export type BulkImportError = z.infer<typeof BulkImportErrorSchema>;
 export type BulkImportResult = z.infer<typeof BulkImportResultSchema>;
+export type PainPointListQuery = z.infer<typeof PainPointListQuerySchema>;
+export type PainPointCreateInput = z.infer<typeof PainPointCreateSchema>;
+export type PainPointUpdateInput = z.infer<typeof PainPointUpdateSchema>;
+export type PainPointDto = z.infer<typeof PainPointDtoSchema>;

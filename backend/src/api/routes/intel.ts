@@ -1,11 +1,15 @@
 import multipart from '@fastify/multipart';
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 
 import {
   BulkImportResultSchema,
   CompanyIdParamsSchema,
   EnrichmentRunCreateSchema,
   EnrichmentRunIdParamsSchema,
+  PainPointCreateSchema,
+  PainPointListQuerySchema,
+  PainPointUpdateSchema,
   intelService,
 } from '../../modules/intel/index.js';
 import {
@@ -13,7 +17,12 @@ import {
   IntelCsvTooManyRowsError,
   IntelNotFoundError,
   IntelValidationError,
+  PainPointNotFoundError,
 } from '../../modules/intel/service.js';
+
+const PainPointIdParamsSchema = z.object({
+  id: z.string().min(1),
+});
 
 function isAcceptedCsvUpload(filename: string | undefined, mimeType: string): boolean {
   const hasCsvExtension = typeof filename === 'string' && filename.toLowerCase().endsWith('.csv');
@@ -23,11 +32,14 @@ function isAcceptedCsvUpload(filename: string | undefined, mimeType: string): bo
 
 function rethrowIntelError(app: FastifyInstance, error: unknown): never {
   if (error instanceof IntelNotFoundError) throw app.httpErrors.notFound(error.message);
+  if (error instanceof PainPointNotFoundError) throw app.httpErrors.notFound(error.message);
   if (error instanceof IntelValidationError) throw app.httpErrors.badRequest(error.message);
   throw error;
 }
 
 export async function registerIntelRoutes(app: FastifyInstance): Promise<void> {
+  const adminGuard = { preHandler: [app.requireAuth, app.requireRole('admin')] };
+
   app.post(
     '/intel/enrichment-runs',
     {
@@ -60,6 +72,52 @@ export async function registerIntelRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   );
+
+  app.get('/intel/pain-points', adminGuard, async (request, reply) => {
+    const query = PainPointListQuerySchema.parse(request.query);
+    const result = await intelService.listPainPoints(query);
+    return reply.code(200).send(result);
+  });
+
+  app.post('/intel/pain-points', adminGuard, async (request, reply) => {
+    const body = PainPointCreateSchema.parse(request.body);
+    const actorUserId = request.authUser?.id;
+    if (!actorUserId) throw app.httpErrors.unauthorized();
+
+    try {
+      const created = await intelService.createPainPoint(body, actorUserId);
+      return reply.code(201).send(created);
+    } catch (error) {
+      rethrowIntelError(app, error);
+    }
+  });
+
+  app.patch('/intel/pain-points/:id', adminGuard, async (request, reply) => {
+    const { id } = PainPointIdParamsSchema.parse(request.params);
+    const body = PainPointUpdateSchema.parse(request.body);
+    const actorUserId = request.authUser?.id;
+    if (!actorUserId) throw app.httpErrors.unauthorized();
+
+    try {
+      const updated = await intelService.updatePainPoint(id, body, actorUserId);
+      return reply.code(200).send(updated);
+    } catch (error) {
+      rethrowIntelError(app, error);
+    }
+  });
+
+  app.delete('/intel/pain-points/:id', adminGuard, async (request, reply) => {
+    const { id } = PainPointIdParamsSchema.parse(request.params);
+    const actorUserId = request.authUser?.id;
+    if (!actorUserId) throw app.httpErrors.unauthorized();
+
+    try {
+      await intelService.deletePainPoint(id, actorUserId);
+      return reply.code(204).send();
+    } catch (error) {
+      rethrowIntelError(app, error);
+    }
+  });
 
   app.get('/intel/enrichment-runs/:id', { preHandler: [app.requireAuth] }, async (request) => {
     const { id } = EnrichmentRunIdParamsSchema.parse(request.params);

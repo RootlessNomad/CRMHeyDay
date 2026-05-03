@@ -1,4 +1,11 @@
-import type { EnrichmentRun, EnrichmentSourceHit, Prisma, PrismaClient } from '@prisma/client';
+import type {
+  EnrichmentRun,
+  EnrichmentSourceHit,
+  PainPoint,
+  PainPointCategory,
+  Prisma,
+  PrismaClient,
+} from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { parse } from 'csv-parse/sync';
 
@@ -11,6 +18,10 @@ import type {
   EnrichmentRunCreateInput,
   EnrichmentRunDto,
   EnrichmentSourceHitDto,
+  PainPointCreateInput,
+  PainPointDto,
+  PainPointListQuery,
+  PainPointUpdateInput,
 } from './schemas.js';
 
 const MAX_BULK_IMPORT_FILE_SIZE = 2 * 1024 * 1024;
@@ -35,6 +46,13 @@ export class IntelValidationError extends Error {
     super(message);
     this.name = 'IntelValidationError';
     this.code = code;
+  }
+}
+
+export class PainPointNotFoundError extends Error {
+  constructor(id: string, message = `Pain point "${id}" no encontrado`) {
+    super(message);
+    this.name = 'PainPointNotFoundError';
   }
 }
 
@@ -127,6 +145,31 @@ function toRunDto(
     ...(extras.service_fits_created_count !== undefined
       ? { service_fits_created_count: extras.service_fits_created_count }
       : {}),
+  };
+}
+
+type PainPointWithRelations = PainPoint & {
+  company: { name: string };
+  category: Pick<PainPointCategory, 'id' | 'key' | 'labelEs'>;
+};
+
+function toPainPointDto(row: PainPointWithRelations): PainPointDto {
+  return {
+    id: row.id,
+    company_id: row.companyId,
+    company_name: row.company.name,
+    category_id: row.categoryId,
+    category_key: row.category.key,
+    category_label_es: row.category.labelEs,
+    confidence: row.confidence,
+    evidence_text: row.evidenceText,
+    evidence_source_url: row.evidenceSourceUrl,
+    evidence_timestamp: row.evidenceTimestamp.toISOString(),
+    detected_by: row.detectedBy,
+    human_verified: row.humanVerified,
+    verified_by_id: row.verifiedById,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
   };
 }
 
@@ -328,6 +371,145 @@ export class IntelService {
       take: limit,
     });
     return rows.map((row) => toRunDto(row));
+  }
+
+  async listPainPoints(
+    query: PainPointListQuery,
+  ): Promise<{ data: PainPointDto[]; total: number }> {
+    const where: Prisma.PainPointWhereInput = {};
+    if (query.company_id) where.companyId = query.company_id;
+    if (query.confidence) where.confidence = query.confidence;
+    if (query.category_id) where.categoryId = query.category_id;
+    if (query.human_verified !== undefined) where.humanVerified = query.human_verified;
+
+    const [rows, total] = await this.db.$transaction([
+      this.db.painPoint.findMany({
+        where,
+        include: {
+          company: { select: { name: true } },
+          category: { select: { id: true, key: true, labelEs: true } },
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip: query.offset,
+        take: query.limit,
+      }),
+      this.db.painPoint.count({ where }),
+    ]);
+
+    return { data: rows.map((row) => toPainPointDto(row)), total };
+  }
+
+  async createPainPoint(input: PainPointCreateInput, actorUserId: string): Promise<PainPointDto> {
+    const [company, category] = await this.db.$transaction([
+      this.db.company.findFirst({ where: { id: input.company_id, deletedAt: null } }),
+      this.db.painPointCategory.findFirst({
+        where: { id: input.category_id, isActive: true },
+      }),
+    ]);
+
+    if (!company) throw new IntelNotFoundError(`Empresa "${input.company_id}" no encontrada`);
+    if (!category) {
+      throw new IntelNotFoundError(`Categoría de pain point "${input.category_id}" no encontrada`);
+    }
+
+    const created = await this.db.painPoint.create({
+      data: {
+        companyId: input.company_id,
+        categoryId: input.category_id,
+        confidence: input.confidence,
+        evidenceText: input.evidence_text,
+        evidenceSourceUrl: input.evidence_source_url ?? null,
+        evidenceTimestamp: new Date(),
+        detectedBy: 'human',
+      },
+      include: {
+        company: { select: { name: true } },
+        category: { select: { id: true, key: true, labelEs: true } },
+      },
+    });
+
+    await this.audit.record({
+      actorUserId,
+      action: 'pain_point.created',
+      entityType: 'pain_point',
+      entityId: created.id,
+      metadata: {
+        companyId: created.companyId,
+        categoryId: created.categoryId,
+        confidence: created.confidence,
+      } satisfies Prisma.InputJsonValue,
+    });
+
+    return toPainPointDto(created);
+  }
+
+  async updatePainPoint(
+    id: string,
+    input: PainPointUpdateInput,
+    actorUserId: string,
+  ): Promise<PainPointDto> {
+    const existing = await this.db.painPoint.findUnique({ where: { id } });
+    if (!existing) throw new PainPointNotFoundError(id);
+
+    const data: Prisma.PainPointUpdateInput = {};
+    const fields: string[] = [];
+
+    if (input.human_verified !== undefined) {
+      data.humanVerified = input.human_verified;
+      data.verifiedBy = input.human_verified
+        ? { connect: { id: actorUserId } }
+        : { disconnect: true };
+      fields.push('human_verified');
+    }
+    if (input.evidence_text !== undefined) {
+      data.evidenceText = input.evidence_text;
+      fields.push('evidence_text');
+    }
+    if (input.evidence_source_url !== undefined) {
+      data.evidenceSourceUrl = input.evidence_source_url;
+      fields.push('evidence_source_url');
+    }
+    if (input.confidence !== undefined) {
+      data.confidence = input.confidence;
+      fields.push('confidence');
+    }
+
+    const updated = await this.db.painPoint.update({
+      where: { id },
+      data,
+      include: {
+        company: { select: { name: true } },
+        category: { select: { id: true, key: true, labelEs: true } },
+      },
+    });
+
+    await this.audit.record({
+      actorUserId,
+      action: 'pain_point.updated',
+      entityType: 'pain_point',
+      entityId: updated.id,
+      metadata: { fields } satisfies Prisma.InputJsonValue,
+    });
+
+    return toPainPointDto(updated);
+  }
+
+  async deletePainPoint(id: string, actorUserId: string): Promise<void> {
+    const existing = await this.db.painPoint.findUnique({ where: { id } });
+    if (!existing) throw new PainPointNotFoundError(id);
+
+    await this.db.painPoint.delete({ where: { id } });
+
+    await this.audit.record({
+      actorUserId,
+      action: 'pain_point.deleted',
+      entityType: 'pain_point',
+      entityId: id,
+      metadata: {
+        companyId: existing.companyId,
+        categoryId: existing.categoryId,
+      } satisfies Prisma.InputJsonValue,
+    });
   }
 }
 
