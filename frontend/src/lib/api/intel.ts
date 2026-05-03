@@ -1,4 +1,5 @@
-import { apiFetch } from './client';
+import { getAccessToken } from '../auth/store';
+import { ApiError, apiFetch, type ApiErrorPayload } from './client';
 
 export interface EnrichmentRunDto {
   id: string;
@@ -40,6 +41,13 @@ export interface CreateEnrichmentRunResponse {
   status: string;
 }
 
+export interface BulkImportResponse {
+  batch_id: string;
+  count: number;
+  run_ids: string[];
+  errors: Array<{ row: number; message: string }>;
+}
+
 export async function createEnrichmentRun(body: {
   company_id?: string;
   input_url?: string;
@@ -58,6 +66,40 @@ export async function listEnrichmentRunsByCompany(
   companyId: string,
 ): Promise<EnrichmentRunSummaryDto[]> {
   return apiFetch<EnrichmentRunSummaryDto[]>(`/intel/companies/${companyId}/enrichment`);
+}
+
+export async function bulkImportCsv(file: File): Promise<BulkImportResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const token = getAccessToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const rawBase = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001';
+  const apiBase = rawBase.replace(/\/$/, '');
+  const response = await fetch(`${apiBase}/intel/bulk-import`, {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    try {
+      const body = (await response.json()) as { error?: ApiErrorPayload };
+      if (body.error?.code) throw new ApiError(response.status, body.error);
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+    }
+
+    throw new ApiError(response.status, {
+      code: 'UNKNOWN_ERROR',
+      message: `Error ${response.status}`,
+    });
+  }
+
+  return response.json() as Promise<BulkImportResponse>;
 }
 
 export function isInFlight(run: { status: string }): boolean {
