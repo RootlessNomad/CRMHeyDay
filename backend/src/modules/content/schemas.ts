@@ -91,6 +91,8 @@ export const ItemSummaryDtoSchema = z.object({
   status: z.string(),
   current_version_id: z.string().nullable(),
   created_at: z.string().datetime(),
+  idea_title: z.string(),
+  pillar_label: z.string(),
 });
 
 export const CalendarQuerySchema = z.object({

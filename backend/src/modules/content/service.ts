@@ -68,6 +68,7 @@ function toItemSummaryDto(row: {
   status: string;
   currentVersionId: string | null;
   createdAt: Date;
+  idea: { title: string; pillar: { labelEs: string } };
 }): ItemSummaryDto {
   return {
     id: row.id,
@@ -76,6 +77,8 @@ function toItemSummaryDto(row: {
     status: row.status,
     current_version_id: row.currentVersionId,
     created_at: row.createdAt.toISOString(),
+    idea_title: row.idea.title,
+    pillar_label: row.idea.pillar.labelEs,
   };
 }
 
@@ -593,7 +596,10 @@ export class ContentService {
     channels: DraftRequestInput['channels'],
     actorUserId: string,
   ): Promise<{ items: ItemSummaryDto[]; jobIds: string[] }> {
-    const idea = await this.db.contentIdea.findUnique({ where: { id: ideaId } });
+    const idea = await this.db.contentIdea.findUnique({
+      where: { id: ideaId },
+      include: { pillar: { select: { labelEs: true } } },
+    });
     if (!idea) throw new IdeaNotFoundError(ideaId);
 
     const items: ItemSummaryDto[] = [];
@@ -612,7 +618,7 @@ export class ContentService {
         contentItemId: item.id,
         actorUserId,
       });
-      items.push(toItemSummaryDto(item));
+      items.push(toItemSummaryDto({ ...item, idea: { title: idea.title, pillar: idea.pillar } }));
       jobIds.push(job.jobId);
     }
 
