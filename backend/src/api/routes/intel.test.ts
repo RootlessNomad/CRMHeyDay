@@ -32,6 +32,9 @@ const updatePainPointMock = vi.fn();
 const deletePainPointMock = vi.fn();
 const listServiceFitMock = vi.fn();
 const regenerateServiceFitMock = vi.fn();
+const getOutboundPrepMock = vi.fn();
+const regenerateOutboundPrepMock = vi.fn();
+const updateOutboundPrepMock = vi.fn();
 const getUserForTokenMock = vi.fn();
 
 vi.mock('../../core/queue/connection.js', () => ({ redis: null }));
@@ -58,6 +61,9 @@ vi.mock('../../modules/intel/index.js', () => ({
   BulkImportResultSchema: { parse: (value: unknown) => value },
   EnrichmentRunIdParamsSchema: { parse: (value: unknown) => value as { id: string } },
   CompanyIdParamsSchema: { parse: (value: unknown) => value as { id: string } },
+  OutboundPrepQuerySchema: { parse: (value: unknown) => value },
+  OutboundPrepRegenerateSchema: { parse: (value: unknown) => value },
+  OutboundPrepUpdateSchema: { parse: (value: unknown) => value },
   PainPointListQuerySchema: { parse: (value: unknown) => value },
   PainPointCreateSchema: { parse: (value: unknown) => value },
   PainPointUpdateSchema: { parse: (value: unknown) => value },
@@ -74,6 +80,9 @@ vi.mock('../../modules/intel/index.js', () => ({
     deletePainPoint: deletePainPointMock,
     listServiceFit: listServiceFitMock,
     regenerateServiceFit: regenerateServiceFitMock,
+    getOutboundPrep: getOutboundPrepMock,
+    regenerateOutboundPrep: regenerateOutboundPrepMock,
+    updateOutboundPrep: updateOutboundPrepMock,
   },
 }));
 
@@ -96,6 +105,12 @@ vi.mock('../../modules/intel/service.js', () => ({
     constructor(message: string) {
       super(message);
       this.name = 'PainPointNotFoundError';
+    }
+  },
+  OutboundPrepNotFoundError: class extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'OutboundPrepNotFoundError';
     }
   },
 }));
@@ -240,6 +255,54 @@ describe('intel routes', () => {
       ],
       models_used: ['claude-sonnet-4'],
     });
+    getOutboundPrepMock.mockResolvedValue({
+      id: 'outbound_prep_1',
+      company_id: 'company_1',
+      segment: 'Clinicas privadas',
+      likely_need: 'Mejorar velocidad comercial',
+      outreach_angle: 'Entrar por leads sin seguimiento',
+      value_proposition: 'Más respuesta y más citas',
+      service_pitch: 'Automatización con soporte web',
+      tone_guidance: 'Directo y consultivo',
+      priority_score: 81,
+      sdr_notes: null,
+      last_generated_at: '2026-05-02T10:00:00.000Z',
+      last_generated_by_id: ADMIN.id,
+      created_at: '2026-05-02T10:00:00.000Z',
+      updated_at: '2026-05-02T10:00:00.000Z',
+    });
+    regenerateOutboundPrepMock.mockResolvedValue({
+      id: 'outbound_prep_1',
+      company_id: 'company_1',
+      segment: 'Clinicas privadas',
+      likely_need: 'Mejorar velocidad comercial',
+      outreach_angle: 'Entrar por leads sin seguimiento',
+      value_proposition: 'Más respuesta y más citas',
+      service_pitch: 'Automatización con soporte web',
+      tone_guidance: 'Directo y consultivo',
+      priority_score: 81,
+      sdr_notes: null,
+      last_generated_at: '2026-05-02T10:00:00.000Z',
+      last_generated_by_id: ADMIN.id,
+      created_at: '2026-05-02T10:00:00.000Z',
+      updated_at: '2026-05-02T10:00:00.000Z',
+    });
+    updateOutboundPrepMock.mockResolvedValue({
+      id: 'outbound_prep_1',
+      company_id: 'company_1',
+      segment: 'Clinicas privadas',
+      likely_need: 'Mejorar velocidad comercial',
+      outreach_angle: 'Entrar por leads sin seguimiento',
+      value_proposition: 'Más respuesta y más citas',
+      service_pitch: 'Automatización con soporte web',
+      tone_guidance: 'Directo y consultivo',
+      priority_score: 90,
+      sdr_notes: 'Insistir con caso similar',
+      last_generated_at: '2026-05-02T10:00:00.000Z',
+      last_generated_by_id: ADMIN.id,
+      created_at: '2026-05-02T10:00:00.000Z',
+      updated_at: '2026-05-02T10:05:00.000Z',
+    });
     const { buildApp } = await import('../server.js');
     app = await buildApp({ disableRateLimit: true });
     token = signAccessToken({ sub: ADMIN.id, role: 'admin', sid: 'ses_intel_routes' });
@@ -375,6 +438,66 @@ describe('intel routes', () => {
       data: [expect.objectContaining({ id: 'service_fit_1', service_line_key: 'automation' })],
     });
     expect(listServiceFitMock).toHaveBeenCalledWith('company_1', '20');
+  });
+
+  it('GET outbound-prep 200 con data', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/intel/outbound-prep?company_id=company_1',
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      data: expect.objectContaining({
+        id: 'outbound_prep_1',
+        company_id: 'company_1',
+        priority_score: 81,
+      }),
+    });
+    expect(getOutboundPrepMock).toHaveBeenCalledWith('company_1');
+  });
+
+  it('POST outbound-prep/regenerate 200 con dto', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/intel/outbound-prep/regenerate',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { company_id: 'company_1' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(
+      expect.objectContaining({
+        id: 'outbound_prep_1',
+        company_id: 'company_1',
+        segment: 'Clinicas privadas',
+      }),
+    );
+    expect(regenerateOutboundPrepMock).toHaveBeenCalledWith('company_1', ADMIN.id);
+  });
+
+  it('PATCH outbound-prep/:company_id 200 con campo actualizado', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/intel/outbound-prep/company_1',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { priority_score: 90, sdr_notes: 'Insistir con caso similar' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(
+      expect.objectContaining({
+        company_id: 'company_1',
+        priority_score: 90,
+        sdr_notes: 'Insistir con caso similar',
+      }),
+    );
+    expect(updateOutboundPrepMock).toHaveBeenCalledWith(
+      'company_1',
+      { priority_score: 90, sdr_notes: 'Insistir con caso similar' },
+      ADMIN.id,
+    );
   });
 
   it('POST service-fit/regenerate 200 con data', async () => {

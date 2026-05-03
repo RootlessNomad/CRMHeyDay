@@ -1,6 +1,7 @@
 import type {
   EnrichmentRun,
   EnrichmentSourceHit,
+  OutboundPrep,
   PainPoint,
   PainPointCategory,
   Prisma,
@@ -15,19 +16,21 @@ import { enqueue, QUEUE_NAMES } from '../../core/queue/queues.js';
 import { anthropicClient, type AnthropicClient } from '../../core/ai/index.js';
 import { prisma as defaultPrisma } from '../../core/prisma/client.js';
 import { normalizeDomain } from '../companies/domain.js';
-import { auditService, type AuditService } from '../audit/service.js';
+import { auditService, type AuditService } from '../audit/index.js';
 import type {
   BulkImportResult,
   EnrichmentRunCreateInput,
   EnrichmentRunDto,
   EnrichmentSourceHitDto,
+  OutboundPrepDto,
+  OutboundPrepUpdateInput,
   PainPointCreateInput,
   PainPointDto,
   PainPointListQuery,
   PainPointUpdateInput,
   ServiceFitDto,
 } from './schemas.js';
-import { serviceFitRationale } from './prompts.js';
+import { outboundPrepPrompt, serviceFitRationale } from './prompts.js';
 
 const MAX_BULK_IMPORT_FILE_SIZE = 2 * 1024 * 1024;
 const MAX_BULK_IMPORT_ROWS = 100;
@@ -58,6 +61,13 @@ export class PainPointNotFoundError extends Error {
   constructor(id: string, message = `Pain point "${id}" no encontrado`) {
     super(message);
     this.name = 'PainPointNotFoundError';
+  }
+}
+
+export class OutboundPrepNotFoundError extends Error {
+  constructor(id: string) {
+    super(`OutboundPrep not found: ${id}`);
+    this.name = 'OutboundPrepNotFoundError';
   }
 }
 
@@ -233,6 +243,62 @@ function toServiceFitDto(row: ServiceFitRow): ServiceFitDto {
     updated_at: row.updatedAt.toISOString(),
   };
 }
+
+function toOutboundPrepDto(row: OutboundPrep): OutboundPrepDto {
+  return {
+    id: row.id,
+    company_id: row.companyId,
+    segment: row.segment,
+    likely_need: row.likelyNeed,
+    outreach_angle: row.outreachAngle,
+    value_proposition: row.valueProposition,
+    service_pitch: row.servicePitch,
+    tone_guidance: row.toneGuidance,
+    priority_score: row.priorityScore,
+    sdr_notes: row.sdrNotes,
+    last_generated_at: row.lastGeneratedAt.toISOString(),
+    last_generated_by_id: row.lastGeneratedById,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+const outboundPrepCompletionSchema = {
+  parse(value: unknown) {
+    if (typeof value !== 'object' || value === null) {
+      throw new Error('Claude devolvió JSON no parseable');
+    }
+
+    const record = value as Record<string, unknown>;
+    const readString = (key: string): string => {
+      const field = record[key];
+      if (typeof field !== 'string' || field.trim().length === 0) {
+        throw new Error('Claude devolvió JSON no parseable');
+      }
+      return field.trim();
+    };
+
+    const priorityScore = record['priority_score'];
+    if (
+      typeof priorityScore !== 'number' ||
+      !Number.isInteger(priorityScore) ||
+      priorityScore < 0 ||
+      priorityScore > 100
+    ) {
+      throw new Error('Claude devolvió JSON no parseable');
+    }
+
+    return {
+      segment: readString('segment'),
+      likely_need: readString('likely_need'),
+      outreach_angle: readString('outreach_angle'),
+      value_proposition: readString('value_proposition'),
+      service_pitch: readString('service_pitch'),
+      tone_guidance: readString('tone_guidance'),
+      priority_score: priorityScore,
+    };
+  },
+};
 
 export class IntelService {
   private readonly db: PrismaClient;
@@ -442,6 +508,209 @@ export class IntelService {
     });
 
     return rows.map((row) => toServiceFitDto(row));
+  }
+
+  async getOutboundPrep(companyId: string): Promise<OutboundPrepDto | null> {
+    const row = await this.db.outboundPrep.findUnique({
+      where: { companyId },
+    });
+
+    return row ? toOutboundPrepDto(row) : null;
+  }
+
+  async regenerateOutboundPrep(
+    companyId: string,
+    actorUserId: string,
+    ai: AiClientLike = anthropicClient,
+  ): Promise<OutboundPrepDto> {
+    const company = await this.db.company.findFirst({
+      where: { id: companyId, deletedAt: null },
+    });
+    if (!company) throw new IntelNotFoundError('Company not found');
+
+    const [painPoints, serviceFits] = await Promise.all([
+      this.db.painPoint.findMany({
+        where: { companyId },
+        include: {
+          category: {
+            select: { key: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.db.serviceFitRecommendation.findMany({
+        where: { companyId },
+        include: {
+          serviceLine: {
+            select: { id: true, key: true, labelEs: true, descriptionEs: true },
+          },
+        },
+        orderBy: [{ fitScore: 'desc' }, { createdAt: 'desc' }],
+      }),
+    ]);
+
+    const fitsAboveThreshold = serviceFits.filter((item) => item.fitScore > 30);
+    const selectedFits = (
+      fitsAboveThreshold.length > 0 ? fitsAboveThreshold : serviceFits.slice(0, 5)
+    ).slice(0, Math.max(fitsAboveThreshold.length, 5));
+    const uniqueServiceLines = unique(selectedFits.map((item) => item.serviceLineId));
+    const selectedServiceLines = uniqueServiceLines
+      .map(
+        (serviceLineId) =>
+          serviceFits.find((item) => item.serviceLineId === serviceLineId)?.serviceLine,
+      )
+      .filter(
+        (
+          serviceLine,
+        ): serviceLine is {
+          id: string;
+          key: string;
+          labelEs: string;
+          descriptionEs: string;
+        } => Boolean(serviceLine),
+      );
+
+    const prompt = outboundPrepPrompt({
+      companyName: company.name,
+      domain: company.domain,
+      website: company.website,
+      city: company.city,
+      icpVertical: company.icpVertical,
+      painPoints: painPoints.map((item) => ({
+        categoryKey: item.category.key,
+        evidenceText: item.evidenceText,
+        confidence: item.confidence,
+      })),
+      serviceLines: selectedServiceLines.map((item) => ({
+        key: item.key,
+        labelEs: item.labelEs,
+        descriptionEs: item.descriptionEs,
+      })),
+      serviceFits: serviceFits.map((item) => ({
+        serviceLineKey: item.serviceLine.key,
+        rationaleEs: item.rationaleEs,
+        fitScore: item.fitScore,
+      })),
+    });
+
+    const completion = await ai.complete({
+      feature: 'outbound_prep',
+      ...prompt,
+      entityType: 'company',
+      entityId: company.id,
+      userId: actorUserId,
+    });
+
+    const parsedJson = safeJsonParse<Record<string, unknown>>(completion.text);
+    if (!parsedJson) throw new Error('Claude devolvió JSON no parseable');
+    const parsed = outboundPrepCompletionSchema.parse(parsedJson);
+    const now = new Date();
+
+    const row = await this.db.outboundPrep.upsert({
+      where: { companyId: company.id },
+      create: {
+        companyId: company.id,
+        segment: parsed.segment,
+        likelyNeed: parsed.likely_need,
+        outreachAngle: parsed.outreach_angle,
+        valueProposition: parsed.value_proposition,
+        servicePitch: parsed.service_pitch,
+        toneGuidance: parsed.tone_guidance,
+        priorityScore: parsed.priority_score,
+        sdrNotes: null,
+        lastGeneratedAt: now,
+        lastGeneratedById: actorUserId,
+      },
+      update: {
+        segment: parsed.segment,
+        likelyNeed: parsed.likely_need,
+        outreachAngle: parsed.outreach_angle,
+        valueProposition: parsed.value_proposition,
+        servicePitch: parsed.service_pitch,
+        toneGuidance: parsed.tone_guidance,
+        priorityScore: parsed.priority_score,
+        lastGeneratedAt: now,
+        lastGeneratedById: actorUserId,
+      },
+    });
+
+    await this.audit.record({
+      actorUserId,
+      action: 'outbound_prep.generated',
+      entityType: 'company',
+      entityId: company.id,
+      metadata: {
+        companyId: company.id,
+        fieldsGenerated: Object.keys(parsed),
+      } satisfies Prisma.InputJsonValue,
+    });
+
+    return toOutboundPrepDto(row);
+  }
+
+  async updateOutboundPrep(
+    companyId: string,
+    input: OutboundPrepUpdateInput,
+    actorUserId: string,
+  ): Promise<OutboundPrepDto> {
+    const existing = await this.db.outboundPrep.findUnique({
+      where: { companyId },
+    });
+    if (!existing) throw new OutboundPrepNotFoundError(companyId);
+
+    const data: Prisma.OutboundPrepUpdateInput = {};
+    const fields: string[] = [];
+
+    if (input.segment !== undefined) {
+      data.segment = input.segment;
+      fields.push('segment');
+    }
+    if (input.likely_need !== undefined) {
+      data.likelyNeed = input.likely_need;
+      fields.push('likely_need');
+    }
+    if (input.outreach_angle !== undefined) {
+      data.outreachAngle = input.outreach_angle;
+      fields.push('outreach_angle');
+    }
+    if (input.value_proposition !== undefined) {
+      data.valueProposition = input.value_proposition;
+      fields.push('value_proposition');
+    }
+    if (input.service_pitch !== undefined) {
+      data.servicePitch = input.service_pitch;
+      fields.push('service_pitch');
+    }
+    if (input.tone_guidance !== undefined) {
+      data.toneGuidance = input.tone_guidance;
+      fields.push('tone_guidance');
+    }
+    if (input.priority_score !== undefined) {
+      data.priorityScore = input.priority_score;
+      fields.push('priority_score');
+    }
+    if (input.sdr_notes !== undefined) {
+      data.sdrNotes = input.sdr_notes;
+      fields.push('sdr_notes');
+    }
+
+    const updated = await this.db.outboundPrep.update({
+      where: { companyId },
+      data,
+    });
+
+    await this.audit.record({
+      actorUserId,
+      action: 'outbound_prep.updated',
+      entityType: 'company',
+      entityId: companyId,
+      metadata: {
+        companyId,
+        fields,
+      } satisfies Prisma.InputJsonValue,
+    });
+
+    return toOutboundPrepDto(updated);
   }
 
   async regenerateServiceFit(

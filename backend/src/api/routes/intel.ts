@@ -7,6 +7,9 @@ import {
   CompanyIdParamsSchema,
   EnrichmentRunCreateSchema,
   EnrichmentRunIdParamsSchema,
+  OutboundPrepQuerySchema,
+  OutboundPrepRegenerateSchema,
+  OutboundPrepUpdateSchema,
   PainPointCreateSchema,
   PainPointListQuerySchema,
   PainPointUpdateSchema,
@@ -20,6 +23,7 @@ import {
   IntelCsvTooManyRowsError,
   IntelNotFoundError,
   IntelValidationError,
+  OutboundPrepNotFoundError,
   PainPointNotFoundError,
 } from '../../modules/intel/service.js';
 
@@ -36,6 +40,7 @@ function isAcceptedCsvUpload(filename: string | undefined, mimeType: string): bo
 function rethrowIntelError(app: FastifyInstance, error: unknown): never {
   if (error instanceof IntelNotFoundError) throw app.httpErrors.notFound(error.message);
   if (error instanceof PainPointNotFoundError) throw app.httpErrors.notFound(error.message);
+  if (error instanceof OutboundPrepNotFoundError) throw app.httpErrors.notFound(error.message);
   if (error instanceof IntelValidationError) throw app.httpErrors.badRequest(error.message);
   throw error;
 }
@@ -86,6 +91,44 @@ export async function registerIntelRoutes(app: FastifyInstance): Promise<void> {
     const query = ServiceFitListQuerySchema.parse(request.query);
     const data = await intelService.listServiceFit(query.company_id, query.limit);
     return reply.code(200).send({ data });
+  });
+
+  app.get('/intel/outbound-prep', adminGuard, async (request, reply) => {
+    const query = OutboundPrepQuerySchema.parse(request.query);
+
+    try {
+      const data = await intelService.getOutboundPrep(query.company_id);
+      return reply.code(200).send({ data });
+    } catch (error) {
+      rethrowIntelError(app, error);
+    }
+  });
+
+  app.post('/intel/outbound-prep/regenerate', adminGuard, async (request, reply) => {
+    const body = OutboundPrepRegenerateSchema.parse(request.body);
+    const actorUserId = request.authUser?.id;
+    if (!actorUserId) throw app.httpErrors.unauthorized();
+
+    try {
+      const result = await intelService.regenerateOutboundPrep(body.company_id, actorUserId);
+      return reply.code(200).send(result);
+    } catch (error) {
+      rethrowIntelError(app, error);
+    }
+  });
+
+  app.patch('/intel/outbound-prep/:company_id', adminGuard, async (request, reply) => {
+    const { company_id } = OutboundPrepQuerySchema.parse(request.params);
+    const body = OutboundPrepUpdateSchema.parse(request.body);
+    const actorUserId = request.authUser?.id;
+    if (!actorUserId) throw app.httpErrors.unauthorized();
+
+    try {
+      const result = await intelService.updateOutboundPrep(company_id, body, actorUserId);
+      return reply.code(200).send(result);
+    } catch (error) {
+      rethrowIntelError(app, error);
+    }
   });
 
   app.post('/intel/service-fit/regenerate', adminGuard, async (request, reply) => {

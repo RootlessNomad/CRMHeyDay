@@ -140,3 +140,46 @@ export type PainPointDto = z.infer<typeof PainPointDtoSchema>;
 export type ServiceFitDto = z.infer<typeof ServiceFitDtoSchema>;
 export type ServiceFitListQuery = z.infer<typeof ServiceFitListQuerySchema>;
 export type ServiceFitRegenerateInput = z.infer<typeof ServiceFitRegenerateSchema>;
+
+export const OutboundPrepDtoSchema = z.object({
+  id: z.string(),
+  company_id: z.string(),
+  segment: z.string(),
+  likely_need: z.string(),
+  outreach_angle: z.string(),
+  value_proposition: z.string(),
+  service_pitch: z.string(),
+  tone_guidance: z.string(),
+  priority_score: z.number().int().min(0).max(100),
+  sdr_notes: z.string().nullable(),
+  last_generated_at: z.string().datetime(),
+  last_generated_by_id: z.string().nullable(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+
+export const OutboundPrepQuerySchema = z.object({
+  company_id: z.string().min(1),
+});
+
+export const OutboundPrepRegenerateSchema = z.object({
+  company_id: z.string().min(1),
+});
+
+export const OutboundPrepUpdateSchema = z
+  .object({
+    segment: z.string().min(1).optional(),
+    likely_need: z.string().min(1).optional(),
+    outreach_angle: z.string().min(1).optional(),
+    value_proposition: z.string().min(1).optional(),
+    service_pitch: z.string().min(1).optional(),
+    tone_guidance: z.string().min(1).optional(),
+    priority_score: z.number().int().min(0).max(100).optional(),
+    sdr_notes: z.string().nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, 'At least one field required');
+
+export type OutboundPrepDto = z.infer<typeof OutboundPrepDtoSchema>;
+export type OutboundPrepQuery = z.infer<typeof OutboundPrepQuerySchema>;
+export type OutboundPrepRegenerateInput = z.infer<typeof OutboundPrepRegenerateSchema>;
+export type OutboundPrepUpdateInput = z.infer<typeof OutboundPrepUpdateSchema>;

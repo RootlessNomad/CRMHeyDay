@@ -86,3 +86,35 @@ export function serviceFitRationale(input: {
     ],
   };
 }
+
+export function outboundPrepPrompt(input: {
+  companyName: string;
+  domain: string | null;
+  website: string | null;
+  city: string | null;
+  icpVertical: string | null;
+  painPoints: Array<{ categoryKey: string; evidenceText: string; confidence: string }>;
+  serviceLines: Array<{ key: string; labelEs: string; descriptionEs: string }>;
+  serviceFits: Array<{ serviceLineKey: string; rationaleEs: string; fitScore: number }>;
+}): PromptBundle {
+  return {
+    systemBlocks: [
+      {
+        text:
+          'Eres un estratega SDR B2B en español. Devuelve SOLO JSON parseable y válido, sin markdown ni texto extra. ' +
+          'Schema exacto: {"segment":string,"likely_need":string,"outreach_angle":string,"value_proposition":string,"service_pitch":string,"tone_guidance":string,"priority_score":number}. ' +
+          'Cada campo de texto debe ser útil para outreach comercial real, con máximo 2-3 frases. ' +
+          'segment: define el tipo de empresa o subsegmento comercial más probable. ' +
+          'likely_need: resume la necesidad principal más probable a partir de señales y pain points. ' +
+          'outreach_angle: propone el ángulo inicial del mensaje frío, concreto y accionable. ' +
+          'value_proposition: explica el valor diferencial que más resonaría para esa empresa. ' +
+          'service_pitch: recomienda el pitch de servicio más adecuado usando las líneas y service fits dados. ' +
+          'tone_guidance: indica tono, estilo y enfoque para el SDR. ' +
+          'priority_score: entero entre 0 y 100 que refleje prioridad comercial relativa. ' +
+          'No inventes datos concretos no soportados por el input. Si falta información, sé prudente pero útil.',
+        cache: true,
+      },
+    ],
+    messages: [{ role: 'user', content: JSON.stringify(input, null, 2) }],
+  };
+}

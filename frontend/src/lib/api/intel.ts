@@ -83,6 +83,23 @@ export interface ServiceFitDto {
   updated_at: string;
 }
 
+export interface OutboundPrepDto {
+  id: string;
+  company_id: string;
+  segment: string;
+  likely_need: string;
+  outreach_angle: string;
+  value_proposition: string;
+  service_pitch: string;
+  tone_guidance: string;
+  priority_score: number;
+  sdr_notes: string | null;
+  last_generated_at: string;
+  last_generated_by_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ListPainPointsQuery {
   company_id?: string;
   confidence?: PainPointConfidence;
@@ -157,6 +174,41 @@ export async function regenerateServiceFit(
   return apiFetch<RegenerateServiceFitResponse>('/intel/service-fit/regenerate', {
     method: 'POST',
     json: { company_id: companyId },
+  });
+}
+
+export async function getOutboundPrep(companyId: string): Promise<OutboundPrepDto | null> {
+  const params = new URLSearchParams({ company_id: companyId });
+  const response = await apiFetch<{ data: OutboundPrepDto | null }>(
+    `/intel/outbound-prep?${params.toString()}`,
+  );
+  return response.data;
+}
+
+export async function regenerateOutboundPrep(companyId: string): Promise<OutboundPrepDto> {
+  return apiFetch<OutboundPrepDto>('/intel/outbound-prep/regenerate', {
+    method: 'POST',
+    json: { company_id: companyId },
+  });
+}
+
+export async function updateOutboundPrep(
+  companyId: string,
+  input: Partial<
+    Omit<
+      OutboundPrepDto,
+      | 'id'
+      | 'company_id'
+      | 'created_at'
+      | 'updated_at'
+      | 'last_generated_at'
+      | 'last_generated_by_id'
+    >
+  >,
+): Promise<OutboundPrepDto> {
+  return apiFetch<OutboundPrepDto>(`/intel/outbound-prep/${companyId}`, {
+    method: 'PATCH',
+    json: input,
   });
 }
 

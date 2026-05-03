@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { ActivityFeed } from '@/components/activities/ActivityFeed';
 import { CompanyFormDialog } from '@/components/companies/CompanyFormDialog';
 import { DeleteCompanyDialog } from '@/components/companies/DeleteCompanyDialog';
+import { OutboundPrepCard } from '@/components/intel/OutboundPrepCard';
 import { ServiceFitList } from '@/components/intel/ServiceFitList';
 import { Tabs, TabsList, TabsPanel, TabsTrigger } from '@/components/Tabs';
 import { getCompany } from '@/lib/api/companies';
@@ -291,6 +292,7 @@ export default function CompanyDetailPage(): JSX.Element {
           <TabsTrigger value="contacts">Contactos</TabsTrigger>
           <TabsTrigger value="leads">Leads</TabsTrigger>
           <TabsTrigger value="service-fit">Service Fit</TabsTrigger>
+          <TabsTrigger value="outbound">Outbound</TabsTrigger>
           <TabsTrigger value="activity">Actividad</TabsTrigger>
         </TabsList>
 
@@ -325,6 +327,10 @@ export default function CompanyDetailPage(): JSX.Element {
 
         <TabsPanel value="service-fit">
           <ServiceFitList companyId={company.id} />
+        </TabsPanel>
+
+        <TabsPanel value="outbound">
+          <OutboundPrepCard companyId={company.id} />
         </TabsPanel>
 
         <TabsPanel value="activity">

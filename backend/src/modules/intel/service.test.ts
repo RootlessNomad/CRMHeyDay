@@ -2,6 +2,7 @@ import type {
   Company,
   EnrichmentRun,
   EnrichmentSourceHit,
+  OutboundPrep,
   PainPoint,
   PainPointCategory,
   PrismaClient,
@@ -14,6 +15,7 @@ import {
   IntelNotFoundError,
   IntelService,
   IntelValidationError,
+  OutboundPrepNotFoundError,
   PainPointNotFoundError,
 } from './service.js';
 
@@ -153,6 +155,27 @@ function makeServiceFitRecommendation(
   };
 }
 
+function makeOutboundPrep(overrides: Partial<OutboundPrep> = {}): OutboundPrep {
+  const now = new Date('2026-05-02T10:00:00.000Z');
+  return {
+    id: 'outbound_prep_1',
+    companyId: 'company_1',
+    segment: 'Clinicas con operación comercial reactiva.',
+    likelyNeed: 'Necesitan acelerar seguimiento comercial.',
+    outreachAngle: 'Abrir con velocidad de respuesta y captación perdida.',
+    valueProposition: 'Automatizar seguimiento y mejorar conversión.',
+    servicePitch: 'Combinar automatización y optimización web.',
+    toneGuidance: 'Directo, consultivo y basado en evidencia.',
+    priorityScore: 78,
+    sdrNotes: null,
+    lastGeneratedAt: now,
+    lastGeneratedById: 'user_1',
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
 function buildPrisma() {
   const companies = [makeCompany()];
   const runs = [makeRun()];
@@ -197,6 +220,7 @@ function buildPrisma() {
       generatedBy: 'rule',
     }),
   ];
+  const outboundPreps = [makeOutboundPrep()];
   let companySeq = 0;
   let runSeq = 0;
   let painPointSeq = painPoints.length;
@@ -447,9 +471,94 @@ function buildPrisma() {
         return { count: 1 };
       }),
     },
+    outboundPrep: {
+      findUnique: vi.fn(async ({ where }: { where: { companyId: string } }) => {
+        return outboundPreps.find((row) => row.companyId === where.companyId) ?? null;
+      }),
+      upsert: vi.fn(
+        async ({
+          where,
+          create,
+          update,
+        }: {
+          where: { companyId: string };
+          create: Record<string, unknown>;
+          update: Record<string, unknown>;
+        }) => {
+          const existing = outboundPreps.find((row) => row.companyId === where.companyId);
+          if (existing) {
+            existing.segment = update['segment'] as string;
+            existing.likelyNeed = update['likelyNeed'] as string;
+            existing.outreachAngle = update['outreachAngle'] as string;
+            existing.valueProposition = update['valueProposition'] as string;
+            existing.servicePitch = update['servicePitch'] as string;
+            existing.toneGuidance = update['toneGuidance'] as string;
+            existing.priorityScore = update['priorityScore'] as number;
+            existing.lastGeneratedAt = update['lastGeneratedAt'] as Date;
+            existing.lastGeneratedById = (update['lastGeneratedById'] as string | null) ?? null;
+            existing.updatedAt = new Date('2026-05-02T10:05:00.000Z');
+            return existing;
+          }
+
+          const row = makeOutboundPrep({
+            id: `outbound_prep_${outboundPreps.length + 1}`,
+            companyId: create['companyId'] as string,
+            segment: create['segment'] as string,
+            likelyNeed: create['likelyNeed'] as string,
+            outreachAngle: create['outreachAngle'] as string,
+            valueProposition: create['valueProposition'] as string,
+            servicePitch: create['servicePitch'] as string,
+            toneGuidance: create['toneGuidance'] as string,
+            priorityScore: create['priorityScore'] as number,
+            sdrNotes: (create['sdrNotes'] as string | null) ?? null,
+            lastGeneratedAt: create['lastGeneratedAt'] as Date,
+            lastGeneratedById: (create['lastGeneratedById'] as string | null) ?? null,
+          });
+          outboundPreps.push(row);
+          return row;
+        },
+      ),
+      update: vi.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: { companyId: string };
+          data: Record<string, unknown>;
+        }) => {
+          const row = outboundPreps.find((item) => item.companyId === where.companyId);
+          if (!row) throw new Error('missing');
+          if (data['segment'] !== undefined) row.segment = data['segment'] as string;
+          if (data['likelyNeed'] !== undefined) row.likelyNeed = data['likelyNeed'] as string;
+          if (data['outreachAngle'] !== undefined) {
+            row.outreachAngle = data['outreachAngle'] as string;
+          }
+          if (data['valueProposition'] !== undefined) {
+            row.valueProposition = data['valueProposition'] as string;
+          }
+          if (data['servicePitch'] !== undefined) row.servicePitch = data['servicePitch'] as string;
+          if (data['toneGuidance'] !== undefined) row.toneGuidance = data['toneGuidance'] as string;
+          if (data['priorityScore'] !== undefined)
+            row.priorityScore = data['priorityScore'] as number;
+          if (data['sdrNotes'] !== undefined)
+            row.sdrNotes = (data['sdrNotes'] as string | null) ?? null;
+          row.updatedAt = new Date('2026-05-02T10:06:00.000Z');
+          return row;
+        },
+      ),
+    },
   } as unknown as PrismaClient;
 
-  return { prisma, companies, runs, painPoints, categories, serviceLines, serviceFits };
+  return {
+    prisma,
+    companies,
+    runs,
+    painPoints,
+    categories,
+    serviceLines,
+    serviceFits,
+    outboundPreps,
+  };
 }
 
 describe('IntelService', () => {
@@ -696,6 +805,85 @@ describe('IntelService', () => {
       service_line_label_es: 'Automatización',
       fit_score: 91,
     });
+  });
+
+  it('getOutboundPrep devuelve null si no existe', async () => {
+    const { prisma } = buildPrisma();
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    const result = await service.getOutboundPrep('missing_company');
+
+    expect(result).toBeNull();
+  });
+
+  it('getOutboundPrep devuelve DTO si existe', async () => {
+    const { prisma } = buildPrisma();
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    const result = await service.getOutboundPrep('company_1');
+
+    expect(result).toMatchObject({
+      company_id: 'company_1',
+      segment: 'Clinicas con operación comercial reactiva.',
+      priority_score: 78,
+    });
+  });
+
+  it('regenerateOutboundPrep crea OutboundPrep cuando no existe previamente', async () => {
+    const { prisma, outboundPreps } = buildPrisma();
+    outboundPreps.splice(0, outboundPreps.length);
+    const audit = { record: vi.fn(async () => {}) };
+    const ai = {
+      complete: vi.fn(async () => ({
+        text: JSON.stringify({
+          segment: 'Clinicas privadas pequeñas.',
+          likely_need: 'Necesitan ordenar seguimiento comercial.',
+          outreach_angle: 'Entrar por leads perdidos por demora.',
+          value_proposition: 'Reducir respuesta tardía y más citas.',
+          service_pitch: 'Automatización comercial con capa web.',
+          tone_guidance: 'Consultivo y concreto.',
+          priority_score: 84,
+        }),
+        modelUsed: 'claude-sonnet-4',
+      })),
+    };
+    const service = new IntelService(prisma, audit as never);
+
+    const result = await service.regenerateOutboundPrep('company_1', 'user_7', ai as never);
+
+    expect(ai.complete).toHaveBeenCalledTimes(1);
+    expect(prisma.outboundPrep.upsert).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      company_id: 'company_1',
+      priority_score: 84,
+      last_generated_by_id: 'user_7',
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: 'user_7',
+        action: 'outbound_prep.generated',
+      }),
+    );
+  });
+
+  it('regenerateOutboundPrep throws si company no existe', async () => {
+    const { prisma } = buildPrisma();
+    prisma.company.findFirst = vi.fn(async () => null) as never;
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    await expect(
+      service.regenerateOutboundPrep('missing', 'user_1', { complete: vi.fn() } as never),
+    ).rejects.toBeInstanceOf(IntelNotFoundError);
+  });
+
+  it('updateOutboundPrep throws OutboundPrepNotFoundError si no existe prep', async () => {
+    const { prisma, outboundPreps } = buildPrisma();
+    outboundPreps.splice(0, outboundPreps.length);
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    await expect(
+      service.updateOutboundPrep('company_1', { sdr_notes: 'Call tomorrow' }, 'user_1'),
+    ).rejects.toBeInstanceOf(OutboundPrepNotFoundError);
   });
 
   it('regenerateServiceFit crea recommendations con Claude mock', async () => {
