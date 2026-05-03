@@ -4,6 +4,7 @@ import { use } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 
+import { ApprovalActions } from '@/components/content/ApprovalActions';
 import { ContentEditor } from '@/components/content/ContentEditor';
 import { VersionHistory } from '@/components/content/VersionHistory';
 import { ApiError } from '@/lib/api/client';
@@ -97,6 +98,7 @@ export default function ContentItemPage({
               {ITEM_STATUS_LABELS[item.status] ?? item.status}
             </span>
           </div>
+          <ApprovalActions itemId={id} status={item.status} />
         </div>
       </header>
 

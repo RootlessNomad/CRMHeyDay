@@ -198,6 +198,24 @@ export interface ContentItemDetailDto {
   updated_at: string;
 }
 
+export interface ContentApprovalEventDto {
+  id: string;
+  item_id: string;
+  from_status: string;
+  to_status: string;
+  actor_id: string;
+  comment: string | null;
+  created_at: string;
+}
+
+export interface ContentItemWithApprovalsDto extends ContentItemDetailDto {
+  approval_events: ContentApprovalEventDto[];
+}
+
+export interface ApprovalTransitionInput {
+  comment?: string;
+}
+
 export interface CreateVersionInput {
   body: string;
   title?: string;
@@ -218,6 +236,54 @@ export async function createVersion(
     method: 'POST',
     json: input,
   });
+}
+
+export async function submitForReview(
+  itemId: string,
+  input?: ApprovalTransitionInput,
+): Promise<ContentItemWithApprovalsDto> {
+  return apiFetch<ContentItemWithApprovalsDto>(`/content/items/${itemId}/submit-review`, {
+    method: 'POST',
+    json: input ?? {},
+  });
+}
+
+export async function approveItem(
+  itemId: string,
+  input?: ApprovalTransitionInput,
+): Promise<ContentItemWithApprovalsDto> {
+  return apiFetch<ContentItemWithApprovalsDto>(`/content/items/${itemId}/approve`, {
+    method: 'POST',
+    json: input ?? {},
+  });
+}
+
+export async function rejectItem(
+  itemId: string,
+  input?: ApprovalTransitionInput,
+): Promise<ContentItemWithApprovalsDto> {
+  return apiFetch<ContentItemWithApprovalsDto>(`/content/items/${itemId}/reject`, {
+    method: 'POST',
+    json: input ?? {},
+  });
+}
+
+export interface ReviewsListResponse {
+  items: ContentItemWithApprovalsDto[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export async function listPendingReviews(query?: {
+  limit?: number;
+  offset?: number;
+}): Promise<ReviewsListResponse> {
+  const params = new URLSearchParams();
+  if (query?.limit) params.set('limit', String(query.limit));
+  if (query?.offset) params.set('offset', String(query.offset));
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return apiFetch<ReviewsListResponse>(`/content/reviews${qs}`);
 }
 
 export const ITEM_STATUS_LABELS: Record<string, string> = {

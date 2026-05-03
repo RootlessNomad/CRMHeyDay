@@ -23,6 +23,10 @@ const deleteIdeaMock = vi.fn();
 const requestDraftsForIdeaMock = vi.fn();
 const getItemByIdMock = vi.fn();
 const createVersionMock = vi.fn();
+const submitForReviewMock = vi.fn();
+const approveItemMock = vi.fn();
+const rejectItemMock = vi.fn();
+const listPendingReviewsMock = vi.fn();
 const getUserForTokenMock = vi.fn();
 
 vi.mock('../../core/queue/connection.js', () => ({ redis: null }));
@@ -57,6 +61,13 @@ vi.mock('../../modules/content/index.js', () => {
     constructor(message: string) {
       super(message);
       this.name = 'ConflictError';
+    }
+  }
+
+  class InvalidTransitionError extends Error {
+    constructor(from: string, to: string) {
+      super(`Invalid transition: ${from} → ${to}`);
+      this.name = 'InvalidTransitionError';
     }
   }
 
@@ -102,10 +113,28 @@ vi.mock('../../modules/content/index.js', () => {
           })
           .parse(value),
     },
+    ApprovalTransitionBodySchema: {
+      parse: (value: unknown) =>
+        z
+          .object({
+            comment: z.string().trim().max(1000).optional(),
+          })
+          .parse(value),
+    },
+    ReviewsListQuerySchema: {
+      parse: (value: unknown) =>
+        z
+          .object({
+            limit: z.coerce.number().int().min(1).max(100).default(20),
+            offset: z.coerce.number().int().min(0).default(0),
+          })
+          .parse(value),
+    },
     IdeaNotFoundError,
     ItemNotFoundError,
     ContentDailyLimitError,
     ConflictError,
+    InvalidTransitionError,
     contentService: {
       listIdeas: listIdeasMock,
       createIdeaManual: createIdeaManualMock,
@@ -116,6 +145,10 @@ vi.mock('../../modules/content/index.js', () => {
       requestDraftsForIdea: requestDraftsForIdeaMock,
       getItemById: getItemByIdMock,
       createVersion: createVersionMock,
+      submitForReview: submitForReviewMock,
+      approveItem: approveItemMock,
+      rejectItem: rejectItemMock,
+      listPendingReviews: listPendingReviewsMock,
     },
   };
 });
@@ -235,6 +268,99 @@ describe('content routes', () => {
       generated_by: 'human',
       edited_by_id: ADMIN.id,
       created_at: '2026-05-03T10:05:00.000Z',
+    });
+    submitForReviewMock.mockResolvedValue({
+      id: 'item_1',
+      idea_id: 'idea_1',
+      channel: 'instagram',
+      status: 'in_review',
+      scheduled_for: '2026-05-05',
+      current_version_id: 'version_2',
+      current_version: null,
+      versions: [],
+      created_by_id: ADMIN.id,
+      created_at: '2026-05-03T10:00:00.000Z',
+      updated_at: '2026-05-03T10:10:00.000Z',
+      approval_events: [
+        {
+          id: 'approval_1',
+          item_id: 'item_1',
+          from_status: 'draft',
+          to_status: 'in_review',
+          actor_id: ADMIN.id,
+          comment: null,
+          created_at: '2026-05-03T10:10:00.000Z',
+        },
+      ],
+    });
+    approveItemMock.mockResolvedValue({
+      id: 'item_1',
+      idea_id: 'idea_1',
+      channel: 'instagram',
+      status: 'approved',
+      scheduled_for: '2026-05-05',
+      current_version_id: 'version_2',
+      current_version: null,
+      versions: [],
+      created_by_id: ADMIN.id,
+      created_at: '2026-05-03T10:00:00.000Z',
+      updated_at: '2026-05-03T10:10:00.000Z',
+      approval_events: [
+        {
+          id: 'approval_2',
+          item_id: 'item_1',
+          from_status: 'in_review',
+          to_status: 'approved',
+          actor_id: ADMIN.id,
+          comment: null,
+          created_at: '2026-05-03T10:10:00.000Z',
+        },
+      ],
+    });
+    rejectItemMock.mockResolvedValue({
+      id: 'item_1',
+      idea_id: 'idea_1',
+      channel: 'instagram',
+      status: 'draft',
+      scheduled_for: '2026-05-05',
+      current_version_id: 'version_2',
+      current_version: null,
+      versions: [],
+      created_by_id: ADMIN.id,
+      created_at: '2026-05-03T10:00:00.000Z',
+      updated_at: '2026-05-03T10:10:00.000Z',
+      approval_events: [
+        {
+          id: 'approval_3',
+          item_id: 'item_1',
+          from_status: 'in_review',
+          to_status: 'draft',
+          actor_id: ADMIN.id,
+          comment: null,
+          created_at: '2026-05-03T10:10:00.000Z',
+        },
+      ],
+    });
+    listPendingReviewsMock.mockResolvedValue({
+      items: [
+        {
+          id: 'item_1',
+          idea_id: 'idea_1',
+          channel: 'instagram',
+          status: 'in_review',
+          scheduled_for: '2026-05-05',
+          current_version_id: 'version_2',
+          current_version: null,
+          versions: [],
+          created_by_id: ADMIN.id,
+          created_at: '2026-05-03T10:00:00.000Z',
+          updated_at: '2026-05-03T10:10:00.000Z',
+          approval_events: [],
+        },
+      ],
+      total: 1,
+      limit: 20,
+      offset: 0,
     });
     const server = await import('../server.js');
     app = await server.buildApp({ disableRateLimit: true });
@@ -363,6 +489,74 @@ describe('content routes', () => {
     });
 
     expect(res.statusCode).toBe(400);
+  });
+
+  it('POST /content/items/:id/submit-review -> 200', async () => {
+    const res = await authInject(app, token, {
+      method: 'POST',
+      url: '/content/items/item_1/submit-review',
+      payload: { comment: 'Enviar' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: 'item_1', status: 'in_review' });
+  });
+
+  it('POST /content/items/:id/submit-review sin auth -> 401', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/content/items/item_1/submit-review',
+      payload: { comment: 'Enviar' },
+    });
+
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('POST /content/items/:id/approve -> 200', async () => {
+    const res = await authInject(app, token, {
+      method: 'POST',
+      url: '/content/items/item_1/approve',
+      payload: { comment: 'OK' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: 'item_1', status: 'approved' });
+  });
+
+  it('POST /content/items/:id/reject -> 200', async () => {
+    const res = await authInject(app, token, {
+      method: 'POST',
+      url: '/content/items/item_1/reject',
+      payload: { comment: 'Cambios' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: 'item_1', status: 'draft' });
+  });
+
+  it('POST /content/items/:id/approve con InvalidTransitionError -> 409', async () => {
+    const { InvalidTransitionError } = await import('../../modules/content/index.js');
+    approveItemMock.mockRejectedValueOnce(new InvalidTransitionError('draft', 'approved'));
+
+    const res = await authInject(app, token, {
+      method: 'POST',
+      url: '/content/items/item_1/approve',
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('GET /content/reviews -> 200 con shape { items[], total, limit, offset }', async () => {
+    const res = await authInject(app, token, { method: 'GET', url: '/content/reviews' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      items: [{ id: 'item_1', status: 'in_review' }],
+      total: 1,
+      limit: 20,
+      offset: 0,
+    });
   });
 });
 

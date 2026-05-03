@@ -2,16 +2,19 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import {
+  ApprovalTransitionBodySchema,
   ConflictError,
   CreateVersionBodySchema,
   ContentDailyLimitError,
   DraftRequestSchema,
+  InvalidTransitionError,
   IdeaCreateBodySchema,
   type IdeaCreateManualInput,
   IdeaListQuerySchema,
   IdeaNotFoundError,
   IdeaUpdateSchema,
   ItemNotFoundError,
+  ReviewsListQuerySchema,
   contentService,
 } from '../../modules/content/index.js';
 
@@ -26,6 +29,7 @@ const ItemIdParamsSchema = z.object({
 function rethrowContentError(app: FastifyInstance, error: unknown): never {
   if (error instanceof IdeaNotFoundError) throw app.httpErrors.notFound(error.message);
   if (error instanceof ItemNotFoundError) throw app.httpErrors.notFound(error.message);
+  if (error instanceof InvalidTransitionError) throw app.httpErrors.conflict(error.message);
   if (error instanceof ConflictError) throw app.httpErrors.conflict(error.message);
   if (error instanceof ContentDailyLimitError) {
     const err = app.httpErrors.tooManyRequests(error.message);
@@ -133,5 +137,53 @@ export async function registerContentRoutes(app: FastifyInstance): Promise<void>
     } catch (error) {
       rethrowContentError(app, error);
     }
+  });
+
+  app.post('/content/items/:id/submit-review', authGuard, async (request, reply) => {
+    const { id } = ItemIdParamsSchema.parse(request.params);
+    const body = ApprovalTransitionBodySchema.parse(request.body);
+    const actorUserId = request.authUser?.id;
+    if (!actorUserId) throw app.httpErrors.unauthorized();
+
+    try {
+      const result = await contentService.submitForReview(id, actorUserId, body.comment);
+      return reply.code(200).send(result);
+    } catch (error) {
+      rethrowContentError(app, error);
+    }
+  });
+
+  app.post('/content/items/:id/approve', authGuard, async (request, reply) => {
+    const { id } = ItemIdParamsSchema.parse(request.params);
+    const body = ApprovalTransitionBodySchema.parse(request.body);
+    const actorUserId = request.authUser?.id;
+    if (!actorUserId) throw app.httpErrors.unauthorized();
+
+    try {
+      const result = await contentService.approveItem(id, actorUserId, body.comment);
+      return reply.code(200).send(result);
+    } catch (error) {
+      rethrowContentError(app, error);
+    }
+  });
+
+  app.post('/content/items/:id/reject', authGuard, async (request, reply) => {
+    const { id } = ItemIdParamsSchema.parse(request.params);
+    const body = ApprovalTransitionBodySchema.parse(request.body);
+    const actorUserId = request.authUser?.id;
+    if (!actorUserId) throw app.httpErrors.unauthorized();
+
+    try {
+      const result = await contentService.rejectItem(id, actorUserId, body.comment);
+      return reply.code(200).send(result);
+    } catch (error) {
+      rethrowContentError(app, error);
+    }
+  });
+
+  app.get('/content/reviews', authGuard, async (request, reply) => {
+    const query = ReviewsListQuerySchema.parse(request.query);
+    const result = await contentService.listPendingReviews(query);
+    return reply.code(200).send(result);
   });
 }

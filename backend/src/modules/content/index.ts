@@ -1,5 +1,8 @@
 export {
+  ApprovalTransitionBodySchema,
+  ContentApprovalEventDtoSchema,
   ContentItemDetailDtoSchema,
+  ContentItemWithApprovalsDtoSchema,
   ContentVersionDtoSchema,
   CreateVersionBodySchema,
   DraftRequestSchema,
@@ -11,11 +14,16 @@ export {
   IdeaListResponseSchema,
   IdeaUpdateSchema,
   ItemSummaryDtoSchema,
+  ReviewsListQuerySchema,
+  toApprovalEventDto,
   toIdeaDto,
   toVersionDto,
 } from './schemas.js';
 export type {
+  ApprovalTransitionBody,
+  ContentApprovalEventDto,
   ContentItemDetailDto,
+  ContentItemWithApprovalsDto,
   ContentVersionDto,
   CreateVersionBody,
   DraftRequestInput,
@@ -27,11 +35,13 @@ export type {
   IdeaListResponse,
   IdeaUpdateInput,
   ItemSummaryDto,
+  ReviewsListQuery,
 } from './schemas.js';
 export {
   ConflictError,
   ContentDailyLimitError,
   ContentService,
+  InvalidTransitionError,
   IdeaNotFoundError,
   ItemNotFoundError,
   contentService,

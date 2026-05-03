@@ -5,6 +5,7 @@ import { prisma as defaultPrisma } from '../../core/prisma/client.js';
 import type { PayloadForQueue, QueueName } from '../../core/queue/types.js';
 import { auditService, type AuditService } from '../audit/index.js';
 import type {
+  ContentItemWithApprovalsDto,
   ContentItemDetailDto,
   ContentVersionDto,
   CreateVersionBody,
@@ -15,7 +16,7 @@ import type {
   IdeaUpdateInput,
   ItemSummaryDto,
 } from './schemas.js';
-import { toIdeaDto, toVersionDto } from './schemas.js';
+import { toApprovalEventDto, toIdeaDto, toVersionDto } from './schemas.js';
 
 interface EnqueueLike {
   <N extends QueueName>(name: N, payload: PayloadForQueue[N]): Promise<{ jobId: string }>;
@@ -39,6 +40,13 @@ export class ItemNotFoundError extends Error {
   constructor(id: string) {
     super(`ContentItem ${id} not found`);
     this.name = 'ItemNotFoundError';
+  }
+}
+
+export class InvalidTransitionError extends Error {
+  constructor(from: string, to: string) {
+    super(`Invalid transition: ${from} → ${to}`);
+    this.name = 'InvalidTransitionError';
   }
 }
 
@@ -67,6 +75,21 @@ function toItemSummaryDto(row: {
   };
 }
 
+const itemDetailInclude = {
+  currentVersion: true,
+  versions: {
+    orderBy: { versionNumber: 'desc' as const },
+    take: 5,
+  },
+};
+
+const itemWithApprovalsInclude = {
+  ...itemDetailInclude,
+  approvalEvents: {
+    orderBy: { createdAt: 'desc' as const },
+  },
+};
+
 export class ContentService {
   private readonly db: PrismaClient;
   private readonly audit: AuditService;
@@ -80,6 +103,55 @@ export class ContentService {
     this.db = prisma;
     this.audit = audit;
     this.enqueue = enqueue;
+  }
+
+  private toDetailDto(row: {
+    id: string;
+    ideaId: string;
+    channel: 'instagram' | 'linkedin' | 'newsletter';
+    status: 'draft' | 'in_review' | 'approved' | 'exported' | 'archived';
+    scheduledFor: Date | null;
+    currentVersionId: string | null;
+    currentVersion: Parameters<typeof toVersionDto>[0] | null;
+    versions: Parameters<typeof toVersionDto>[0][];
+    createdById: string;
+    createdAt: Date;
+    updatedAt: Date;
+  }): ContentItemDetailDto {
+    return {
+      id: row.id,
+      idea_id: row.ideaId,
+      channel: row.channel,
+      status: row.status,
+      scheduled_for: row.scheduledFor?.toISOString().slice(0, 10) ?? null,
+      current_version_id: row.currentVersionId,
+      current_version: row.currentVersion ? toVersionDto(row.currentVersion) : null,
+      versions: row.versions.map(toVersionDto),
+      created_by_id: row.createdById,
+      created_at: row.createdAt.toISOString(),
+      updated_at: row.updatedAt.toISOString(),
+    };
+  }
+
+  private toItemWithApprovalsDto(row: {
+    approvalEvents?: Parameters<typeof toApprovalEventDto>[0][];
+    id: string;
+    ideaId: string;
+    channel: 'instagram' | 'linkedin' | 'newsletter';
+    status: 'draft' | 'in_review' | 'approved' | 'exported' | 'archived';
+    scheduledFor: Date | null;
+    currentVersionId: string | null;
+    currentVersion: Parameters<typeof toVersionDto>[0] | null;
+    versions: Parameters<typeof toVersionDto>[0][];
+    createdById: string;
+    createdAt: Date;
+    updatedAt: Date;
+  }): ContentItemWithApprovalsDto {
+    const base = this.toDetailDto(row);
+    return {
+      ...base,
+      approval_events: (row.approvalEvents ?? []).map(toApprovalEventDto),
+    };
   }
 
   async createIdeaManual(input: IdeaCreateManualInput, actorUserId: string): Promise<IdeaDto> {
@@ -203,29 +275,10 @@ export class ContentService {
   async getItemById(id: string): Promise<ContentItemDetailDto> {
     const row = await this.db.contentItem.findFirst({
       where: { id, deletedAt: null },
-      include: {
-        currentVersion: true,
-        versions: {
-          orderBy: { versionNumber: 'desc' },
-          take: 5,
-        },
-      },
+      include: itemDetailInclude,
     });
     if (!row) throw new ItemNotFoundError(id);
-
-    return {
-      id: row.id,
-      idea_id: row.ideaId,
-      channel: row.channel,
-      status: row.status,
-      scheduled_for: row.scheduledFor?.toISOString().slice(0, 10) ?? null,
-      current_version_id: row.currentVersionId,
-      current_version: row.currentVersion ? toVersionDto(row.currentVersion) : null,
-      versions: row.versions.map(toVersionDto),
-      created_by_id: row.createdById,
-      created_at: row.createdAt.toISOString(),
-      updated_at: row.updatedAt.toISOString(),
-    };
+    return this.toDetailDto(row);
   }
 
   async updateIdea(id: string, input: IdeaUpdateInput, actorUserId: string): Promise<IdeaDto> {
@@ -362,6 +415,164 @@ export class ContentService {
     });
 
     return toVersionDto(newVersion);
+  }
+
+  async submitForReview(
+    itemId: string,
+    actorUserId: string,
+    comment?: string,
+  ): Promise<ContentItemWithApprovalsDto> {
+    const item = await this.db.contentItem.findFirst({ where: { id: itemId, deletedAt: null } });
+    if (!item) throw new ItemNotFoundError(itemId);
+    if (item.status !== 'draft') throw new InvalidTransitionError(item.status, 'in_review');
+
+    const updated = await this.db.$transaction(async (tx) => {
+      await tx.contentApprovalEvent.create({
+        data: {
+          itemId,
+          fromStatus: 'draft',
+          toStatus: 'in_review',
+          actorId: actorUserId,
+          comment: comment ?? null,
+        },
+      });
+
+      await tx.contentItem.update({
+        where: { id: itemId },
+        data: { status: 'in_review' },
+      });
+
+      return tx.contentItem.findFirstOrThrow({
+        where: { id: itemId, deletedAt: null },
+        include: itemWithApprovalsInclude,
+      });
+    });
+
+    await this.audit.record({
+      actorUserId,
+      action: 'content.approval.submitted',
+      entityType: 'ContentItem',
+      entityId: itemId,
+      metadata: { fromStatus: 'draft', toStatus: 'in_review' },
+    });
+
+    return this.toItemWithApprovalsDto(updated);
+  }
+
+  async approveItem(
+    itemId: string,
+    actorUserId: string,
+    comment?: string,
+  ): Promise<ContentItemWithApprovalsDto> {
+    const item = await this.db.contentItem.findFirst({ where: { id: itemId, deletedAt: null } });
+    if (!item) throw new ItemNotFoundError(itemId);
+    if (item.status !== 'in_review') throw new InvalidTransitionError(item.status, 'approved');
+
+    const approvedAt = new Date();
+    const updated = await this.db.$transaction(async (tx) => {
+      await tx.contentApprovalEvent.create({
+        data: {
+          itemId,
+          fromStatus: 'in_review',
+          toStatus: 'approved',
+          actorId: actorUserId,
+          comment: comment ?? null,
+        },
+      });
+
+      await tx.contentItem.update({
+        where: { id: itemId },
+        data: { status: 'approved', approvedById: actorUserId, approvedAt },
+      });
+
+      return tx.contentItem.findFirstOrThrow({
+        where: { id: itemId, deletedAt: null },
+        include: itemWithApprovalsInclude,
+      });
+    });
+
+    await this.audit.record({
+      actorUserId,
+      action: 'content.approval.approved',
+      entityType: 'ContentItem',
+      entityId: itemId,
+      metadata: { itemId },
+    });
+
+    return this.toItemWithApprovalsDto(updated);
+  }
+
+  async rejectItem(
+    itemId: string,
+    actorUserId: string,
+    comment?: string,
+  ): Promise<ContentItemWithApprovalsDto> {
+    const item = await this.db.contentItem.findFirst({ where: { id: itemId, deletedAt: null } });
+    if (!item) throw new ItemNotFoundError(itemId);
+    if (item.status !== 'in_review') throw new InvalidTransitionError(item.status, 'draft');
+
+    const updated = await this.db.$transaction(async (tx) => {
+      await tx.contentApprovalEvent.create({
+        data: {
+          itemId,
+          fromStatus: 'in_review',
+          toStatus: 'draft',
+          actorId: actorUserId,
+          comment: comment ?? null,
+        },
+      });
+
+      await tx.contentItem.update({
+        where: { id: itemId },
+        data: { status: 'draft', approvedById: null, approvedAt: null },
+      });
+
+      return tx.contentItem.findFirstOrThrow({
+        where: { id: itemId, deletedAt: null },
+        include: itemWithApprovalsInclude,
+      });
+    });
+
+    await this.audit.record({
+      actorUserId,
+      action: 'content.approval.rejected',
+      entityType: 'ContentItem',
+      entityId: itemId,
+      metadata: { itemId },
+    });
+
+    return this.toItemWithApprovalsDto(updated);
+  }
+
+  async listPendingReviews(query: { limit: number; offset: number }): Promise<{
+    items: ContentItemWithApprovalsDto[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const where = { status: 'in_review' as const, deletedAt: null };
+    const [rows, total] = await Promise.all([
+      this.db.contentItem.findMany({
+        where,
+        include: {
+          currentVersion: true,
+          versions: { orderBy: { createdAt: 'desc' }, take: 5 },
+          approvalEvents: { orderBy: { createdAt: 'desc' }, take: 5 },
+          idea: { select: { title: true, pillarId: true, pillar: { select: { labelEs: true } } } },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: query.limit,
+        skip: query.offset,
+      }),
+      this.db.contentItem.count({ where }),
+    ]);
+
+    return {
+      items: rows.map((row) => this.toItemWithApprovalsDto(row)),
+      total,
+      limit: query.limit,
+      offset: query.offset,
+    };
   }
 }
 

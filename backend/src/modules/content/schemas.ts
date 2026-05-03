@@ -195,3 +195,51 @@ export function toVersionDto(row: VersionRow): ContentVersionDto {
     created_at: row.createdAt.toISOString(),
   };
 }
+
+export const ApprovalTransitionBodySchema = z.object({
+  comment: z.string().trim().max(1000).optional(),
+});
+
+export const ReviewsListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export const ContentApprovalEventDtoSchema = z.object({
+  id: z.string(),
+  item_id: z.string(),
+  from_status: z.string(),
+  to_status: z.string(),
+  actor_id: z.string(),
+  comment: z.string().nullable(),
+  created_at: z.string().datetime(),
+});
+
+export const ContentItemWithApprovalsDtoSchema = ContentItemDetailDtoSchema.extend({
+  approval_events: z.array(ContentApprovalEventDtoSchema),
+});
+
+export type ApprovalTransitionBody = z.infer<typeof ApprovalTransitionBodySchema>;
+export type ReviewsListQuery = z.infer<typeof ReviewsListQuerySchema>;
+export type ContentApprovalEventDto = z.infer<typeof ContentApprovalEventDtoSchema>;
+export type ContentItemWithApprovalsDto = z.infer<typeof ContentItemWithApprovalsDtoSchema>;
+
+export function toApprovalEventDto(row: {
+  id: string;
+  itemId: string;
+  fromStatus: string;
+  toStatus: string;
+  actorId: string;
+  comment: string | null;
+  createdAt: Date;
+}): ContentApprovalEventDto {
+  return {
+    id: row.id,
+    item_id: row.itemId,
+    from_status: row.fromStatus,
+    to_status: row.toStatus,
+    actor_id: row.actorId,
+    comment: row.comment ?? null,
+    created_at: row.createdAt.toISOString(),
+  };
+}

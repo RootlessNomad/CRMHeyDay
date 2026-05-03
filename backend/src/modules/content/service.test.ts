@@ -5,6 +5,7 @@ import {
   ConflictError,
   ContentDailyLimitError,
   ContentService,
+  InvalidTransitionError,
   IdeaNotFoundError,
   ItemNotFoundError,
 } from './service.js';
@@ -19,6 +20,9 @@ function buildPrisma() {
     status: string;
     scheduledFor: Date | null;
     currentVersionId: string | null;
+    approvedById: string | null;
+    approvedAt: Date | null;
+    exportedAt: Date | null;
     createdById: string;
     createdAt: Date;
     updatedAt: Date;
@@ -35,6 +39,15 @@ function buildPrisma() {
     hashtags: string[];
     generatedBy: 'claude' | 'human' | 'claude_edited_by_human';
     editedById: string;
+    createdAt: Date;
+  };
+  type ApprovalEventRow = {
+    id: string;
+    itemId: string;
+    fromStatus: string;
+    toStatus: string;
+    actorId: string;
+    comment: string | null;
     createdAt: Date;
   };
   const ideas = [
@@ -77,6 +90,9 @@ function buildPrisma() {
       status: 'draft',
       scheduledFor,
       currentVersionId: 'version_3',
+      approvedById: null,
+      approvedAt: null,
+      exportedAt: null,
       createdById: 'user_1',
       createdAt: now,
       updatedAt: now,
@@ -89,6 +105,9 @@ function buildPrisma() {
       status: 'approved',
       scheduledFor: null,
       currentVersionId: null,
+      approvedById: 'user_9',
+      approvedAt: new Date('2026-05-02T10:00:00.000Z'),
+      exportedAt: null,
       createdById: 'user_2',
       createdAt: now,
       updatedAt: now,
@@ -101,9 +120,27 @@ function buildPrisma() {
       status: 'draft',
       scheduledFor: null,
       currentVersionId: null,
+      approvedById: null,
+      approvedAt: null,
+      exportedAt: null,
       createdById: 'user_1',
       createdAt: now,
       updatedAt: now,
+      deletedAt: null as Date | null,
+    },
+    {
+      id: 'item_review',
+      ideaId: 'idea_2',
+      channel: 'linkedin' as const,
+      status: 'in_review',
+      scheduledFor: null,
+      currentVersionId: null,
+      approvedById: null,
+      approvedAt: null,
+      exportedAt: null,
+      createdById: 'user_2',
+      createdAt: new Date('2026-05-01T09:00:00.000Z'),
+      updatedAt: new Date('2026-05-01T09:00:00.000Z'),
       deletedAt: null as Date | null,
     },
   ];
@@ -148,6 +185,17 @@ function buildPrisma() {
       createdAt: new Date('2026-05-03T10:00:00.000Z'),
     },
   ];
+  const approvalEvents: ApprovalEventRow[] = [
+    {
+      id: 'approval_1',
+      itemId: 'item_review',
+      fromStatus: 'draft',
+      toStatus: 'in_review',
+      actorId: 'user_2',
+      comment: 'Listo para revisar',
+      createdAt: new Date('2026-05-01T09:30:00.000Z'),
+    },
+  ];
   let auditCount = 0;
   let versionCountSequence: number[] = [];
 
@@ -156,6 +204,29 @@ function buildPrisma() {
     if (next !== undefined) return next;
     return versions.filter((version) => version.itemId === itemId).length;
   };
+
+  const buildItemDetail = (item: ItemRow) => {
+    const itemVersions = versions
+      .filter((version) => version.itemId === item.id)
+      .sort((left, right) => right.versionNumber - left.versionNumber)
+      .slice(0, 5);
+
+    return {
+      ...item,
+      currentVersion:
+        item.currentVersionId === null
+          ? null
+          : (versions.find((version) => version.id === item.currentVersionId) ?? null),
+      versions: itemVersions,
+    };
+  };
+
+  const buildItemWithApprovals = (item: ItemRow) => ({
+    ...buildItemDetail(item),
+    approvalEvents: approvalEvents
+      .filter((event) => event.itemId === item.id)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime()),
+  });
 
   const prisma = {
     contentPillar: {
@@ -237,6 +308,9 @@ function buildPrisma() {
           status: data['status'] as string,
           scheduledFor: null,
           currentVersionId: null,
+          approvedById: null,
+          approvedAt: null,
+          exportedAt: null,
           createdById: data['createdById'] as string,
           createdAt: now,
           updatedAt: now,
@@ -251,10 +325,7 @@ function buildPrisma() {
           include,
         }: {
           where: { id: string; deletedAt: null };
-          include?: {
-            currentVersion?: boolean;
-            versions?: { orderBy: { versionNumber: 'desc' }; take: number };
-          };
+          include?: Record<string, unknown>;
         }) => {
           const item = items.find((candidate) => {
             if (candidate.id !== where.id) return false;
@@ -263,27 +334,91 @@ function buildPrisma() {
           });
           if (!item) return null;
           if (!include) return item;
-          const itemVersions = versions
-            .filter((version) => version.itemId === item.id)
-            .sort((left, right) => right.versionNumber - left.versionNumber)
-            .slice(0, include.versions?.take ?? versions.length);
-          return {
-            ...item,
-            currentVersion:
-              item.currentVersionId === null
-                ? null
-                : (versions.find((version) => version.id === item.currentVersionId) ?? null),
-            versions: itemVersions,
-          };
+          if ('approvalEvents' in include) return buildItemWithApprovals(item);
+          return buildItemDetail(item);
         },
       ),
+      findFirstOrThrow: vi.fn(
+        async ({
+          where,
+          include,
+        }: {
+          where: { id: string; deletedAt: null };
+          include?: Record<string, unknown>;
+        }) => {
+          const found = await prisma.contentItem.findFirst({ where, include });
+          if (!found) throw new Error('missing');
+          return found;
+        },
+      ),
+      findMany: vi.fn(
+        async ({
+          where,
+          take,
+          skip,
+        }: {
+          where?: { status?: string; deletedAt?: null };
+          take?: number;
+          skip?: number;
+        }) =>
+          items
+            .filter((item) => {
+              if (where?.status && item.status !== where.status) return false;
+              if (where?.deletedAt === null && item.deletedAt !== null) return false;
+              return true;
+            })
+            .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+            .slice(skip ?? 0, (skip ?? 0) + (take ?? items.length))
+            .map(buildItemWithApprovals),
+      ),
+      count: vi.fn(
+        async ({ where }: { where?: { status?: string; deletedAt?: null } }) =>
+          items.filter((item) => {
+            if (where?.status && item.status !== where.status) return false;
+            if (where?.deletedAt === null && item.deletedAt !== null) return false;
+            return true;
+          }).length,
+      ),
       update: vi.fn(
-        async ({ where, data }: { where: { id: string }; data: { currentVersionId: string } }) => {
+        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
           const item = items.find((candidate) => candidate.id === where.id);
           if (!item) throw new Error('missing');
-          item.currentVersionId = data.currentVersionId;
+          if ('currentVersionId' in data)
+            item.currentVersionId = data['currentVersionId'] as string;
+          if ('status' in data) item.status = data['status'] as string;
+          if ('approvedById' in data)
+            item.approvedById = (data['approvedById'] as string | null) ?? null;
+          if ('approvedAt' in data) item.approvedAt = (data['approvedAt'] as Date | null) ?? null;
+          if ('exportedAt' in data) item.exportedAt = (data['exportedAt'] as Date | null) ?? null;
           item.updatedAt = now;
           return item;
+        },
+      ),
+    },
+    contentApprovalEvent: {
+      create: vi.fn(
+        async ({
+          data,
+        }: {
+          data: {
+            itemId: string;
+            fromStatus: string;
+            toStatus: string;
+            actorId: string;
+            comment: string | null;
+          };
+        }) => {
+          const created = {
+            id: `approval_${approvalEvents.length + 1}`,
+            itemId: data.itemId,
+            fromStatus: data.fromStatus,
+            toStatus: data.toStatus,
+            actorId: data.actorId,
+            comment: data.comment,
+            createdAt: new Date(now.getTime() + approvalEvents.length * 1000),
+          };
+          approvalEvents.push(created);
+          return created;
         },
       ),
     },
@@ -328,11 +463,13 @@ function buildPrisma() {
     $transaction: vi.fn(
       async (
         callback: (tx: {
+          contentApprovalEvent: typeof prisma.contentApprovalEvent;
           contentVersion: typeof prisma.contentVersion;
           contentItem: typeof prisma.contentItem;
         }) => Promise<unknown>,
       ) =>
         callback({
+          contentApprovalEvent: prisma.contentApprovalEvent,
           contentVersion: prisma.contentVersion,
           contentItem: prisma.contentItem,
         }),
@@ -342,6 +479,7 @@ function buildPrisma() {
   return {
     prisma,
     items,
+    approvalEvents,
     versions,
     setAuditCount(value: number) {
       auditCount = value;
@@ -499,6 +637,95 @@ describe('ContentService', () => {
     await expect(
       service.requestDraftsForIdea('missing', ['instagram'], 'user_1'),
     ).rejects.toBeInstanceOf(IdeaNotFoundError);
+  });
+
+  it("submitForReview happy path -> status='in_review' y evento creado", async () => {
+    const result = await service.submitForReview('item_1', 'user_reviewer', 'Enviar');
+
+    expect(result.status).toBe('in_review');
+    expect(result.approval_events[0]).toMatchObject({
+      item_id: 'item_1',
+      from_status: 'draft',
+      to_status: 'in_review',
+      actor_id: 'user_reviewer',
+      comment: 'Enviar',
+    });
+    expect(prismaState.approvalEvents.some((event) => event.itemId === 'item_1')).toBe(true);
+  });
+
+  it('submitForReview desde status no-draft -> InvalidTransitionError', async () => {
+    await expect(service.submitForReview('item_review', 'user_reviewer')).rejects.toBeInstanceOf(
+      InvalidTransitionError,
+    );
+  });
+
+  it('approveItem happy path -> status=approved, approvedById fijado', async () => {
+    const result = await service.approveItem('item_review', 'approver_1', 'OK');
+
+    const updatedItem = prismaState.items.find((item) => item.id === 'item_review');
+    expect(result.status).toBe('approved');
+    expect(updatedItem?.approvedById).toBe('approver_1');
+    expect(updatedItem?.approvedAt).toBeInstanceOf(Date);
+    expect(result.approval_events[0]).toMatchObject({
+      from_status: 'in_review',
+      to_status: 'approved',
+      actor_id: 'approver_1',
+    });
+  });
+
+  it('approveItem desde status no-in_review -> InvalidTransitionError', async () => {
+    await expect(service.approveItem('item_1', 'approver_1')).rejects.toBeInstanceOf(
+      InvalidTransitionError,
+    );
+  });
+
+  it("rejectItem -> vuelve a 'draft'", async () => {
+    const result = await service.rejectItem('item_review', 'approver_1', 'Faltan cambios');
+
+    expect(result.status).toBe('draft');
+    expect(result.approval_events[0]).toMatchObject({
+      from_status: 'in_review',
+      to_status: 'draft',
+      comment: 'Faltan cambios',
+    });
+  });
+
+  it('listPendingReviews -> solo devuelve items in_review', async () => {
+    const result = await service.listPendingReviews({ limit: 20, offset: 0 });
+
+    expect(result.total).toBe(1);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.id).toBe('item_review');
+    expect(result.items[0]?.status).toBe('in_review');
+    expect(result.items[0]?.approval_events[0]?.id).toBe('approval_1');
+  });
+
+  it('submitForReview item no existe -> ItemNotFoundError', async () => {
+    await expect(service.submitForReview('missing', 'user_1')).rejects.toBeInstanceOf(
+      ItemNotFoundError,
+    );
+  });
+
+  it('approveItem item no existe -> ItemNotFoundError', async () => {
+    await expect(service.approveItem('missing', 'user_1')).rejects.toBeInstanceOf(
+      ItemNotFoundError,
+    );
+  });
+
+  it('rejectItem item no existe -> ItemNotFoundError', async () => {
+    await expect(service.rejectItem('missing', 'user_1')).rejects.toBeInstanceOf(ItemNotFoundError);
+  });
+
+  it('audit.record se llama en submitForReview', async () => {
+    await service.submitForReview('item_1', 'user_reviewer');
+
+    expect(audit.record).toHaveBeenCalledWith({
+      actorUserId: 'user_reviewer',
+      action: 'content.approval.submitted',
+      entityType: 'ContentItem',
+      entityId: 'item_1',
+      metadata: { fromStatus: 'draft', toStatus: 'in_review' },
+    });
   });
 
   it('createVersion happy path crea v1, actualiza currentVersionId y audit', async () => {
