@@ -5,11 +5,14 @@ import type {
   PainPointCategory,
   Prisma,
   PrismaClient,
+  ServiceFitRecommendation,
+  ServiceLine,
 } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { parse } from 'csv-parse/sync';
 
 import { enqueue, QUEUE_NAMES } from '../../core/queue/queues.js';
+import { anthropicClient, type AnthropicClient } from '../../core/ai/index.js';
 import { prisma as defaultPrisma } from '../../core/prisma/client.js';
 import { normalizeDomain } from '../companies/domain.js';
 import { auditService, type AuditService } from '../audit/service.js';
@@ -22,7 +25,9 @@ import type {
   PainPointDto,
   PainPointListQuery,
   PainPointUpdateInput,
+  ServiceFitDto,
 } from './schemas.js';
+import { serviceFitRationale } from './prompts.js';
 
 const MAX_BULK_IMPORT_FILE_SIZE = 2 * 1024 * 1024;
 const MAX_BULK_IMPORT_ROWS = 100;
@@ -176,6 +181,57 @@ function toPainPointDto(row: PainPointWithRelations): PainPointDto {
 function normalizeInputUrl(inputUrl: string): string {
   const parsed = new URL(inputUrl);
   return parsed.toString();
+}
+
+function safeJsonParse<T>(value: string): T | null {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+function unique<T>(items: T[]): T[] {
+  return [...new Set(items)];
+}
+
+function buildFallbackRationale(serviceLine: ServiceLine, painPointKeys: string[]) {
+  return {
+    serviceLineKey: serviceLine.key,
+    rationaleEs: `Encaje basado en señales: ${painPointKeys.join(', ')}.`,
+    expectedOutcomeEs: `Reducir fricción asociada a ${serviceLine.labelEs.toLowerCase()}.`,
+    fitScore: Math.min(95, 40 + painPointKeys.length * 15),
+  };
+}
+
+interface ServiceFitRationaleItem {
+  serviceLineKey: string;
+  rationaleEs: string;
+  expectedOutcomeEs: string;
+  fitScore: number;
+}
+
+type AiClientLike = Pick<AnthropicClient, 'complete'>;
+
+type ServiceFitRow = ServiceFitRecommendation & {
+  serviceLine: Pick<ServiceLine, 'id' | 'key' | 'labelEs'>;
+};
+
+function toServiceFitDto(row: ServiceFitRow): ServiceFitDto {
+  return {
+    id: row.id,
+    company_id: row.companyId,
+    service_line_id: row.serviceLineId,
+    service_line_key: row.serviceLine.key,
+    service_line_label_es: row.serviceLine.labelEs,
+    triggering_signals: row.triggeringSignals,
+    rationale_es: row.rationaleEs,
+    expected_outcome_es: row.expectedOutcomeEs,
+    fit_score: row.fitScore,
+    generated_by: row.generatedBy,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  };
 }
 
 export class IntelService {
@@ -371,6 +427,166 @@ export class IntelService {
       take: limit,
     });
     return rows.map((row) => toRunDto(row));
+  }
+
+  async listServiceFit(companyId: string, limit = 20): Promise<ServiceFitDto[]> {
+    const rows = await this.db.serviceFitRecommendation.findMany({
+      where: { companyId },
+      include: {
+        serviceLine: {
+          select: { id: true, key: true, labelEs: true },
+        },
+      },
+      orderBy: [{ fitScore: 'desc' }, { createdAt: 'desc' }],
+      take: limit,
+    });
+
+    return rows.map((row) => toServiceFitDto(row));
+  }
+
+  async regenerateServiceFit(
+    companyId: string,
+    actorUserId: string,
+    ai: AiClientLike = anthropicClient,
+  ): Promise<{ data: ServiceFitDto[]; models_used: string[] }> {
+    const company = await this.db.company.findFirst({
+      where: { id: companyId, deletedAt: null },
+    });
+    if (!company) throw new IntelNotFoundError(`Empresa "${companyId}" no encontrada`);
+
+    const painPoints = await this.db.painPoint.findMany({
+      where: { companyId },
+      include: {
+        category: {
+          select: { key: true, defaultServiceRecommendations: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const activeServiceLines = await this.db.serviceLine.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    const serviceLineByKey = new Map(activeServiceLines.map((item) => [item.key, item]));
+
+    const candidateCounts = new Map<string, { count: number; painPointKeys: string[] }>();
+    for (const painPoint of painPoints) {
+      for (const serviceLineKey of painPoint.category.defaultServiceRecommendations) {
+        if (!serviceLineByKey.has(serviceLineKey)) continue;
+        const current = candidateCounts.get(serviceLineKey) ?? { count: 0, painPointKeys: [] };
+        current.count += 1;
+        current.painPointKeys.push(painPoint.category.key);
+        candidateCounts.set(serviceLineKey, current);
+      }
+    }
+
+    const candidateKeys = [...candidateCounts.entries()]
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 3)
+      .map(([key]) => key);
+
+    const orderedServiceLines = candidateKeys
+      .map((key) => serviceLineByKey.get(key))
+      .filter((item): item is ServiceLine => Boolean(item));
+
+    const modelsUsed: string[] = [];
+    let createData: Array<{
+      companyId: string;
+      serviceLineId: string;
+      triggeringSignals: string[];
+      rationaleEs: string;
+      expectedOutcomeEs: string;
+      fitScore: number;
+      generatedBy: ServiceFitRecommendation['generatedBy'];
+    }> = [];
+
+    if (orderedServiceLines.length > 0) {
+      let rationales: ServiceFitRationaleItem[];
+      try {
+        const prompt = serviceFitRationale({
+          companyName: company.name,
+          painPoints: painPoints.map((item) => ({
+            categoryKey: item.category.key,
+            evidenceText: item.evidenceText,
+            confidence: item.confidence,
+          })),
+          serviceLines: orderedServiceLines.map((serviceLine) => ({
+            key: serviceLine.key,
+            labelEs: serviceLine.labelEs,
+            descriptionEs: serviceLine.descriptionEs,
+          })),
+        });
+        const response = await ai.complete({
+          feature: 'service_fit',
+          ...prompt,
+          entityType: 'company',
+          entityId: company.id,
+          userId: actorUserId,
+        });
+        modelsUsed.push(response.modelUsed);
+        rationales = safeJsonParse<ServiceFitRationaleItem[]>(response.text) ?? [];
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Claude service_fit falló: ${message}`);
+      }
+
+      if (!Array.isArray(rationales)) {
+        throw new Error('Claude devolvió una respuesta inválida para service_fit.');
+      }
+
+      const rationaleByKey = new Map(rationales.map((item) => [item.serviceLineKey, item]));
+      createData = orderedServiceLines.map((serviceLine) => {
+        const fallback = buildFallbackRationale(
+          serviceLine,
+          unique(candidateCounts.get(serviceLine.key)?.painPointKeys ?? []),
+        );
+        const resolved = rationaleByKey.get(serviceLine.key) ?? fallback;
+        return {
+          companyId: company.id,
+          serviceLineId: serviceLine.id,
+          triggeringSignals: unique(candidateCounts.get(serviceLine.key)?.painPointKeys ?? []),
+          rationaleEs: resolved.rationaleEs,
+          expectedOutcomeEs: resolved.expectedOutcomeEs,
+          fitScore: Math.max(0, Math.min(100, resolved.fitScore)),
+          generatedBy: rationaleByKey.has(serviceLine.key) ? 'claude' : 'rule',
+        };
+      });
+    }
+
+    await this.db.$transaction(async (tx) => {
+      await tx.serviceFitRecommendation.deleteMany({ where: { companyId: company.id } });
+      if (createData.length > 0) {
+        await tx.serviceFitRecommendation.createMany({ data: createData });
+      }
+    });
+
+    const rows = await this.db.serviceFitRecommendation.findMany({
+      where: { companyId: company.id },
+      include: {
+        serviceLine: {
+          select: { id: true, key: true, labelEs: true },
+        },
+      },
+      orderBy: [{ fitScore: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    await this.audit.record({
+      actorUserId,
+      action: 'service_fit.regenerated',
+      entityType: 'company',
+      entityId: company.id,
+      metadata: {
+        companyId: company.id,
+        recommendations: rows.length,
+        modelsUsed: unique(modelsUsed),
+      } satisfies Prisma.InputJsonValue,
+    });
+
+    return {
+      data: rows.map((row) => toServiceFitDto(row)),
+      models_used: unique(modelsUsed),
+    };
   }
 
   async listPainPoints(

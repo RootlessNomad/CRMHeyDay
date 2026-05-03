@@ -30,6 +30,8 @@ const listPainPointsMock = vi.fn();
 const createPainPointMock = vi.fn();
 const updatePainPointMock = vi.fn();
 const deletePainPointMock = vi.fn();
+const listServiceFitMock = vi.fn();
+const regenerateServiceFitMock = vi.fn();
 const getUserForTokenMock = vi.fn();
 
 vi.mock('../../core/queue/connection.js', () => ({ redis: null }));
@@ -59,6 +61,8 @@ vi.mock('../../modules/intel/index.js', () => ({
   PainPointListQuerySchema: { parse: (value: unknown) => value },
   PainPointCreateSchema: { parse: (value: unknown) => value },
   PainPointUpdateSchema: { parse: (value: unknown) => value },
+  ServiceFitListQuerySchema: { parse: (value: unknown) => value },
+  ServiceFitRegenerateSchema: { parse: (value: unknown) => value },
   intelService: {
     createEnrichmentRun: createEnrichmentRunMock,
     getEnrichmentRun: getEnrichmentRunMock,
@@ -68,6 +72,8 @@ vi.mock('../../modules/intel/index.js', () => ({
     createPainPoint: createPainPointMock,
     updatePainPoint: updatePainPointMock,
     deletePainPoint: deletePainPointMock,
+    listServiceFit: listServiceFitMock,
+    regenerateServiceFit: regenerateServiceFitMock,
   },
 }));
 
@@ -199,6 +205,41 @@ describe('intel routes', () => {
       updated_at: '2026-05-02T10:05:00.000Z',
     });
     deletePainPointMock.mockResolvedValue(undefined);
+    listServiceFitMock.mockResolvedValue([
+      {
+        id: 'service_fit_1',
+        company_id: 'company_1',
+        service_line_id: 'service_line_1',
+        service_line_key: 'automation',
+        service_line_label_es: 'Automatización',
+        triggering_signals: ['late_replies'],
+        rationale_es: 'Hay tareas manuales.',
+        expected_outcome_es: 'Reducir retrasos.',
+        fit_score: 88,
+        generated_by: 'claude',
+        created_at: '2026-05-02T10:00:00.000Z',
+        updated_at: '2026-05-02T10:00:00.000Z',
+      },
+    ]);
+    regenerateServiceFitMock.mockResolvedValue({
+      data: [
+        {
+          id: 'service_fit_1',
+          company_id: 'company_1',
+          service_line_id: 'service_line_1',
+          service_line_key: 'automation',
+          service_line_label_es: 'Automatización',
+          triggering_signals: ['late_replies'],
+          rationale_es: 'Hay tareas manuales.',
+          expected_outcome_es: 'Reducir retrasos.',
+          fit_score: 88,
+          generated_by: 'claude',
+          created_at: '2026-05-02T10:00:00.000Z',
+          updated_at: '2026-05-02T10:00:00.000Z',
+        },
+      ],
+      models_used: ['claude-sonnet-4'],
+    });
     const { buildApp } = await import('../server.js');
     app = await buildApp({ disableRateLimit: true });
     token = signAccessToken({ sub: ADMIN.id, role: 'admin', sid: 'ses_intel_routes' });
@@ -320,6 +361,40 @@ describe('intel routes', () => {
 
     expect(response.statusCode).toBe(403);
     expect(listPainPointsMock).not.toHaveBeenCalled();
+  });
+
+  it('GET service-fit 200 con data', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/intel/service-fit?company_id=company_1&limit=20',
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      data: [expect.objectContaining({ id: 'service_fit_1', service_line_key: 'automation' })],
+    });
+    expect(listServiceFitMock).toHaveBeenCalledWith('company_1', '20');
+  });
+
+  it('POST service-fit/regenerate 200 con data', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/intel/service-fit/regenerate',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { company_id: 'company_1' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      data: [expect.objectContaining({ id: 'service_fit_1', generated_by: 'claude' })],
+      models_used: ['claude-sonnet-4'],
+    });
+    expect(regenerateServiceFitMock).toHaveBeenCalledWith(
+      'company_1',
+      ADMIN.id,
+      expect.objectContaining({ complete: expect.any(Function) }),
+    );
   });
 
   it('POST pain-points 201', async () => {

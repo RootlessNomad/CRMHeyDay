@@ -11,7 +11,7 @@ export function RecentRunsList({ runIds }: RecentRunsListProps): JSX.Element {
     return (
       <div className="border-border bg-surface rounded-2xl border p-8 text-center shadow-sm">
         <p className="text-text-muted text-sm">
-          Aún no hay investigaciones. Pega una URL arriba para empezar.
+          Aún no hay investigaciones. Usa la pestaña URL o CSV para empezar.
         </p>
       </div>
     );

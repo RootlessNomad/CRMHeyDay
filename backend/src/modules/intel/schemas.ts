@@ -92,6 +92,30 @@ export const PainPointDtoSchema = z.object({
   updated_at: z.string().datetime(),
 });
 
+export const ServiceFitDtoSchema = z.object({
+  id: z.string(),
+  company_id: z.string(),
+  service_line_id: z.string(),
+  service_line_key: z.string(),
+  service_line_label_es: z.string(),
+  triggering_signals: z.array(z.string()),
+  rationale_es: z.string(),
+  expected_outcome_es: z.string(),
+  fit_score: z.number().int().min(0).max(100),
+  generated_by: z.enum(['rule', 'claude', 'human']),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+
+export const ServiceFitListQuerySchema = z.object({
+  company_id: z.string().min(1),
+  limit: z.coerce.number().int().min(1).max(200).default(20),
+});
+
+export const ServiceFitRegenerateSchema = z.object({
+  company_id: z.string().min(1),
+});
+
 export const BulkImportErrorSchema = z.object({
   row: z.number().int().positive(),
   message: z.string().min(1),
@@ -113,3 +137,6 @@ export type PainPointListQuery = z.infer<typeof PainPointListQuerySchema>;
 export type PainPointCreateInput = z.infer<typeof PainPointCreateSchema>;
 export type PainPointUpdateInput = z.infer<typeof PainPointUpdateSchema>;
 export type PainPointDto = z.infer<typeof PainPointDtoSchema>;
+export type ServiceFitDto = z.infer<typeof ServiceFitDtoSchema>;
+export type ServiceFitListQuery = z.infer<typeof ServiceFitListQuerySchema>;
+export type ServiceFitRegenerateInput = z.infer<typeof ServiceFitRegenerateSchema>;

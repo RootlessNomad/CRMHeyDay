@@ -5,6 +5,8 @@ import type {
   PainPoint,
   PainPointCategory,
   PrismaClient,
+  ServiceFitRecommendation,
+  ServiceLine,
 } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -117,13 +119,83 @@ function makePainPoint(overrides: Partial<PainPoint> = {}): PainPoint {
   };
 }
 
+function makeServiceLine(overrides: Partial<ServiceLine> = {}): ServiceLine {
+  const now = new Date('2026-05-02T10:00:00.000Z');
+  return {
+    id: 'service_line_1',
+    key: 'website',
+    labelEs: 'Website',
+    descriptionEs: 'Mejora web y conversión.',
+    subCapabilities: [],
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+function makeServiceFitRecommendation(
+  overrides: Partial<ServiceFitRecommendation> = {},
+): ServiceFitRecommendation {
+  const now = new Date('2026-05-02T10:00:00.000Z');
+  return {
+    id: 'service_fit_1',
+    companyId: 'company_1',
+    serviceLineId: 'service_line_1',
+    triggeringSignals: ['late_replies'],
+    rationaleEs: 'Hay fricción en la atención comercial.',
+    expectedOutcomeEs: 'Mejorar conversión y respuesta.',
+    fitScore: 82,
+    generatedBy: 'claude',
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
 function buildPrisma() {
   const companies = [makeCompany()];
   const runs = [makeRun()];
-  const categories = [makePainPointCategory()];
+  const categories = [
+    makePainPointCategory({
+      defaultServiceRecommendations: ['website', 'automation'],
+    }),
+    makePainPointCategory({
+      id: 'category_2',
+      key: 'manual_followup',
+      labelEs: 'Seguimiento manual',
+      defaultServiceRecommendations: ['automation'],
+    }),
+  ];
   const painPoints = [
     makePainPoint(),
-    makePainPoint({ id: 'pain_point_2', confidence: 'inferred' }),
+    makePainPoint({
+      id: 'pain_point_2',
+      categoryId: 'category_2',
+      confidence: 'inferred',
+      evidenceText: 'Seguimiento manual con retrasos',
+    }),
+  ];
+  const serviceLines = [
+    makeServiceLine(),
+    makeServiceLine({
+      id: 'service_line_2',
+      key: 'automation',
+      labelEs: 'Automatización',
+      descriptionEs: 'Automatiza seguimiento comercial.',
+    }),
+  ];
+  const serviceFits = [
+    makeServiceFitRecommendation(),
+    makeServiceFitRecommendation({
+      id: 'service_fit_2',
+      serviceLineId: 'service_line_2',
+      triggeringSignals: ['late_replies', 'manual_followup'],
+      rationaleEs: 'Automatización para reducir retrasos.',
+      expectedOutcomeEs: 'Seguimiento más rápido.',
+      fitScore: 91,
+      generatedBy: 'rule',
+    }),
   ];
   let companySeq = 0;
   let runSeq = 0;
@@ -135,7 +207,21 @@ function buildPrisma() {
     category: (() => {
       const category =
         categories.find((item) => item.id === row.categoryId) ?? makePainPointCategory();
-      return { id: category.id, key: category.key, labelEs: category.labelEs };
+      return {
+        id: category.id,
+        key: category.key,
+        labelEs: category.labelEs,
+        defaultServiceRecommendations: category.defaultServiceRecommendations,
+      };
+    })(),
+  });
+
+  const withServiceFitRelations = (row: ServiceFitRecommendation) => ({
+    ...row,
+    serviceLine: (() => {
+      const serviceLine =
+        serviceLines.find((item) => item.id === row.serviceLineId) ?? makeServiceLine();
+      return { id: serviceLine.id, key: serviceLine.key, labelEs: serviceLine.labelEs };
     })(),
   });
 
@@ -295,12 +381,75 @@ function buildPrisma() {
         );
       }),
     },
+    serviceLine: {
+      findMany: vi.fn(
+        async ({
+          where,
+        }: {
+          where?: { key?: { in?: string[] }; isActive?: boolean };
+        } = {}) => {
+          return serviceLines.filter((row) => {
+            if (where?.isActive !== undefined && row.isActive !== where.isActive) return false;
+            if (where?.key?.in && !where.key.in.includes(row.key)) return false;
+            return true;
+          });
+        },
+      ),
+    },
     serviceFitRecommendation: {
-      count: vi.fn(async () => 1),
+      count: vi.fn(async ({ where }: { where?: Record<string, unknown> } = {}) => {
+        if (where?.['createdAt']) return 1;
+        return serviceFits.filter((row) => {
+          if (where?.['companyId'] && row.companyId !== where['companyId']) return false;
+          return true;
+        }).length;
+      }),
+      findMany: vi.fn(
+        async ({
+          where,
+          take = serviceFits.length,
+        }: {
+          where?: Record<string, unknown>;
+          take?: number;
+        } = {}) => {
+          const filtered = serviceFits
+            .filter((row) => {
+              if (where?.['companyId'] && row.companyId !== where['companyId']) return false;
+              return true;
+            })
+            .sort((a, b) => b.fitScore - a.fitScore);
+          return filtered.slice(0, take).map(withServiceFitRelations);
+        },
+      ),
+      createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
+        for (const item of data) {
+          serviceFits.push(
+            makeServiceFitRecommendation({
+              id: `service_fit_${serviceFits.length + 1}`,
+              companyId: item['companyId'] as string,
+              serviceLineId: item['serviceLineId'] as string,
+              triggeringSignals: item['triggeringSignals'] as string[],
+              rationaleEs: item['rationaleEs'] as string,
+              expectedOutcomeEs: item['expectedOutcomeEs'] as string,
+              fitScore: item['fitScore'] as number,
+              generatedBy: item['generatedBy'] as ServiceFitRecommendation['generatedBy'],
+            }),
+          );
+        }
+        return { count: data.length };
+      }),
+      deleteMany: vi.fn(async ({ where }: { where?: Record<string, unknown> } = {}) => {
+        const remaining = serviceFits.filter((row) => {
+          if (where?.['companyId']) return row.companyId !== where['companyId'];
+          return false;
+        });
+        serviceFits.splice(0, serviceFits.length, ...remaining);
+        return { count: 1 };
+      }),
     },
   } as unknown as PrismaClient;
 
-  return { prisma, companies, runs, painPoints, categories };
+  return { prisma, companies, runs, painPoints, categories, serviceLines, serviceFits };
 }
 
 describe('IntelService', () => {
@@ -532,6 +681,92 @@ describe('IntelService', () => {
       company_name: 'ACME',
       category_key: 'late_replies',
     });
+  });
+
+  it('listServiceFit devuelve recomendaciones ordenadas por fit_score', async () => {
+    const { prisma } = buildPrisma();
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    const result = await service.listServiceFit('company_1', 20);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      id: 'service_fit_2',
+      service_line_key: 'automation',
+      service_line_label_es: 'Automatización',
+      fit_score: 91,
+    });
+  });
+
+  it('regenerateServiceFit crea recommendations con Claude mock', async () => {
+    const { prisma } = buildPrisma();
+    const audit = { record: vi.fn(async () => {}) };
+    const ai = {
+      complete: vi.fn(async () => ({
+        text: JSON.stringify([
+          {
+            serviceLineKey: 'automation',
+            rationaleEs: 'Hay demasiadas tareas manuales.',
+            expectedOutcomeEs: 'Reducir tiempos de seguimiento.',
+            fitScore: 94,
+          },
+          {
+            serviceLineKey: 'website',
+            rationaleEs: 'La web no convierte bien.',
+            expectedOutcomeEs: 'Mejorar captación.',
+            fitScore: 81,
+          },
+        ]),
+        modelUsed: 'claude-sonnet-4',
+      })),
+    };
+    const service = new IntelService(prisma, audit as never);
+
+    const result = await service.regenerateServiceFit('company_1', 'user_1', ai as never);
+
+    expect(ai.complete).toHaveBeenCalledTimes(1);
+    expect(prisma.serviceFitRecommendation.deleteMany).toHaveBeenCalledWith({
+      where: { companyId: 'company_1' },
+    });
+    expect(result.models_used).toEqual(['claude-sonnet-4']);
+    expect(result.data[0]).toMatchObject({
+      service_line_key: 'automation',
+      fit_score: 94,
+      generated_by: 'claude',
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: 'user_1',
+        action: 'service_fit.regenerated',
+      }),
+    );
+  });
+
+  it('regenerateServiceFit sin pain points devuelve lista vacía sin llamar Claude', async () => {
+    const { prisma, painPoints } = buildPrisma();
+    painPoints.splice(0, painPoints.length);
+    const ai = {
+      complete: vi.fn(),
+    };
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    const result = await service.regenerateServiceFit('company_1', 'user_1', ai as never);
+
+    expect(result).toEqual({ data: [], models_used: [] });
+    expect(ai.complete).not.toHaveBeenCalled();
+    expect(prisma.serviceFitRecommendation.deleteMany).toHaveBeenCalledWith({
+      where: { companyId: 'company_1' },
+    });
+  });
+
+  it('regenerateServiceFit con company inexistente lanza NotFoundError', async () => {
+    const { prisma } = buildPrisma();
+    prisma.company.findFirst = vi.fn(async () => null) as never;
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    await expect(
+      service.regenerateServiceFit('missing', 'user_1', { complete: vi.fn() } as never),
+    ).rejects.toBeInstanceOf(IntelNotFoundError);
   });
 
   it('createPainPoint crea con detectedBy human', async () => {

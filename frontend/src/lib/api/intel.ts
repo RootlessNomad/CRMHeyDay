@@ -68,6 +68,21 @@ export interface PainPointDto {
   updated_at: string;
 }
 
+export interface ServiceFitDto {
+  id: string;
+  company_id: string;
+  service_line_id: string;
+  service_line_key: string;
+  service_line_label_es: string;
+  triggering_signals: string[];
+  rationale_es: string;
+  expected_outcome_es: string;
+  fit_score: number;
+  generated_by: 'rule' | 'claude' | 'human';
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ListPainPointsQuery {
   company_id?: string;
   confidence?: PainPointConfidence;
@@ -80,6 +95,15 @@ export interface ListPainPointsQuery {
 export interface ListPainPointsResponse {
   data: PainPointDto[];
   total: number;
+}
+
+export interface ServiceFitResponse {
+  data: ServiceFitDto[];
+}
+
+export interface RegenerateServiceFitResponse {
+  data: ServiceFitDto[];
+  models_used: string[];
 }
 
 function buildPainPointsSearchParams(query: ListPainPointsQuery): string {
@@ -120,6 +144,20 @@ export async function listPainPoints(
   return apiFetch<ListPainPointsResponse>(
     `/intel/pain-points${buildPainPointsSearchParams(query)}`,
   );
+}
+
+export async function listServiceFit(companyId: string): Promise<ServiceFitResponse> {
+  const params = new URLSearchParams({ company_id: companyId });
+  return apiFetch<ServiceFitResponse>(`/intel/service-fit?${params.toString()}`);
+}
+
+export async function regenerateServiceFit(
+  companyId: string,
+): Promise<RegenerateServiceFitResponse> {
+  return apiFetch<RegenerateServiceFitResponse>('/intel/service-fit/regenerate', {
+    method: 'POST',
+    json: { company_id: companyId },
+  });
 }
 
 export async function updatePainPoint(

@@ -10,8 +10,11 @@ import {
   PainPointCreateSchema,
   PainPointListQuerySchema,
   PainPointUpdateSchema,
+  ServiceFitListQuerySchema,
+  ServiceFitRegenerateSchema,
   intelService,
 } from '../../modules/intel/index.js';
+import { anthropicClient } from '../../core/ai/index.js';
 import {
   IntelCsvTooLargeError,
   IntelCsvTooManyRowsError,
@@ -77,6 +80,49 @@ export async function registerIntelRoutes(app: FastifyInstance): Promise<void> {
     const query = PainPointListQuerySchema.parse(request.query);
     const result = await intelService.listPainPoints(query);
     return reply.code(200).send(result);
+  });
+
+  app.get('/intel/service-fit', adminGuard, async (request, reply) => {
+    const query = ServiceFitListQuerySchema.parse(request.query);
+    const data = await intelService.listServiceFit(query.company_id, query.limit);
+    return reply.code(200).send({ data });
+  });
+
+  app.post('/intel/service-fit/regenerate', adminGuard, async (request, reply) => {
+    const body = ServiceFitRegenerateSchema.parse(request.body);
+    const actorUserId = request.authUser?.id;
+    if (!actorUserId) throw app.httpErrors.unauthorized();
+
+    try {
+      // Desviación temporal del spec original: esta regeneración se ejecuta inline en la request, sin queue.
+      const timedAi = {
+        complete: async (
+          input: Parameters<typeof anthropicClient.complete>[0],
+        ): ReturnType<typeof anthropicClient.complete> => {
+          return await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('Claude service_fit excedió el timeout de 30s.'));
+            }, 30_000);
+
+            void anthropicClient
+              .complete(input)
+              .then((result) => {
+                clearTimeout(timeout);
+                resolve(result);
+              })
+              .catch((error: unknown) => {
+                clearTimeout(timeout);
+                reject(error);
+              });
+          });
+        },
+      };
+
+      const result = await intelService.regenerateServiceFit(body.company_id, actorUserId, timedAi);
+      return reply.code(200).send(result);
+    } catch (error) {
+      rethrowIntelError(app, error);
+    }
   });
 
   app.post('/intel/pain-points', adminGuard, async (request, reply) => {
