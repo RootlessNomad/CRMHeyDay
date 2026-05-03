@@ -3,9 +3,9 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: **M5 Content Engine — 6/6 UJ completados ✅**. UJ-22→27 cerrados. Next: `/review` M5 → delivery.
-- **Last Completed**: **UJ-27 Exportar + biblioteca** — POST /content/items/:id/export (MD/TXT/ICS/CSV + sanitize formula injection), GET /content/library (full-text + filtros + paginación), botones export en editor, página /content/library. 578 tests totales (457 backend + 121 frontend).
-- **Next Step**: **`/review` M5** — verificar los 6 UJs de Content Engine (UJ-22→27).
+- **Phase**: **DELIVERY ✅** — M0→M5 completados (27 UJ + 11 IT). `/review` M5 PASS-WITH-NOTES. Auditoría holística APTO PARA DELIVERY.
+- **Last Completed**: **Auditoría de seguridad holística + fix `ItemSummaryDto`** — bug `idea_title`/`pillar_label` ausentes en mapper corregido. 578 tests (457 backend + 121 frontend). Auditoría: sin issues críticos.
+- **Next Step**: Despliegue (docker compose up + seed demo + verificación golden paths en navegador) o iteraciones post-delivery con `/iterate`.
 
 ## Estado verificable
 
