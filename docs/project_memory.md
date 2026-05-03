@@ -3,9 +3,9 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: **M5 Content Engine — 5/6 UJ completados**. UJ-22→26 cerrados. Pendiente UJ-27 Exportar + biblioteca → `/review` M5 → delivery.
-- **Last Completed**: **UJ-26 Calendario editorial** — GET /content/calendar + PATCH /content/items/:id/schedule + vista mensual custom + CalendarItemBadge. 568 tests totales (447 backend + 121 frontend).
-- **Next Step**: **UJ-27 Exportar + biblioteca** (export CSV/JSON de items, biblioteca de contenido reutilizable, sanear formula injection antes de exportar).
+- **Phase**: **M5 Content Engine — 6/6 UJ completados ✅**. UJ-22→27 cerrados. Next: `/review` M5 → delivery.
+- **Last Completed**: **UJ-27 Exportar + biblioteca** — POST /content/items/:id/export (MD/TXT/ICS/CSV + sanitize formula injection), GET /content/library (full-text + filtros + paginación), botones export en editor, página /content/library. 578 tests totales (457 backend + 121 frontend).
+- **Next Step**: **`/review` M5** — verificar los 6 UJs de Content Engine (UJ-22→27).
 
 ## Estado verificable
 
@@ -14,7 +14,7 @@
 | `pnpm format:check` (root)   |   ✅   |
 | `pnpm lint` (root)           |   ✅   |
 | `pnpm typecheck` (3 ws)      |   ✅   |
-| `pnpm test` (568 tests)      |   ✅   |
+| `pnpm test` (578 tests)      |   ✅   |
 | Repo `.git` inicializado     |   ✅   |
 | CI GitHub Actions definido   |   ✅   |
 | Seed demo type-clean         |   ✅   |
@@ -170,15 +170,14 @@ Ver `docs/decision_log.md` (11 decisiones de Planning) y entradas relevantes del
 | UJ-24 Editor con versiones   | ✅ completed |
 | UJ-25 Flujo de aprobación    | ✅ completed |
 | UJ-26 Calendario editorial   | ✅ completed |
-| UJ-27 Exportar + biblioteca  | ⏳ pending   |
+| UJ-27 Exportar + biblioteca  | ✅ completed |
 
 ## Pasos para la siguiente sesión
 
 1. `/session-start`
-2. **UJ-27 Exportar + biblioteca** — ver spec en user_journeys.md. Recordar: sanear formula injection en CSV antes de exportar (deuda UJ-07).
-3. Tras UJ-27 → **`/review` M5** — verificar los 6 UJs de Content Engine.
-4. Si review pasa → delivery (seed demo completo, golden paths, auditoría holística).
-5. **Deuda operativa (no bloquea UJ-27)**:
+2. **`/review` M5** — verificar los 6 UJs de Content Engine (UJ-22→27).
+3. Si review pasa → delivery (seed demo completo, golden paths, auditoría holística).
+4. **Deuda operativa (no bloquea review)**:
    - Migración Prisma `add_contact_anonymized_at` (deuda UJ-03, requiere docker).
    - Conectar repo a GitHub para activar CI.
    - Refactor `act()` warnings en `LeadFormDialog.test.tsx`.
