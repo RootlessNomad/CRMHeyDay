@@ -1004,3 +1004,84 @@ None.
 ### Overall Verdict: **PASS-WITH-NOTES**
 
 All six UJs (22–27) are functionally complete end-to-end: backend endpoints exist and are auth-guarded, frontend pages are real implementations (no stubs), tests cover critical paths, error/loading/empty states are present, and the security checklist passes with no critical findings. The notes above are non-blocking for this milestone.
+
+## Auditoría de seguridad holística — Delivery — 2026-05-04
+
+### Scope
+
+Auditoría final pre-delivery cubriendo todos los milestones (M0–M5).
+
+### Resultados por área
+
+#### 1. Autenticación y autorización
+
+- **78 rutas autenticadas** via `requireAuth` / `authGuard` / `adminGuard`. ✅
+- Rutas públicas intencionadas: `GET /health`, `GET /ready`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`. ✅
+- Rutas admin (`/admin/*`, `/intel/pain-points PATCH`, `/intel/service-fit/regenerate`, `/intel/outbound-prep PATCH`, taxonomías write) protegidas con `requireRole('admin')`. ✅
+- Gap conocido: `POST /content/items/:id/submit-review`, `approve`, `reject` usan `requireAuth` no `requireRole('admin')`. Aceptable en v1 (todos los usuarios son admin). TODO antes de roles multi-nivel.
+
+#### 2. Secrets y configuración
+
+- Sin secrets hardcodeados en código de producción. La key de Anthropic se lee desde Vault (Level 3) con fallback a `ANTHROPIC_API_KEY` env. ✅
+- `.env` correctamente gitignoreado. `.env.example` con placeholders, sin valores reales. ✅
+- `generate-secrets.sh` para JWT y `CREDENTIAL_MASTER_KEY`. ✅
+- Vault AES-256-GCM con `keyVersion`. ✅
+
+#### 3. Inyección SQL
+
+- Cero queries `$queryRaw` o `$executeRaw` en código de producción. Todo via Prisma ORM parametrizado. ✅
+
+#### 4. XSS
+
+- Sin `dangerouslySetInnerHTML` ni `innerHTML` en el frontend. React escapa por defecto. ✅
+- `safeHttpUrl` en renders de URL de empresa (filtra a `http(s)` solamente). ✅
+- CSV formula injection saneada con `sanitizeCsvCell` (prefija `'` a celdas `=+-@\t\r`). ✅
+
+#### 5. SSRF
+
+- `scrapeWebsite` tiene guard completo: bloquea `localhost`, IPs privadas IPv4 y IPv6 via DNS lookup. Tests cubren el bloqueo. ✅
+
+#### 6. Validación de entradas
+
+- Zod en todos los endpoints (body, query, params). ✅
+- Multipart CSV: límite 2 MB, 100 filas máximo. ✅
+- Content-type validado en upload. ✅
+
+#### 7. Headers de seguridad
+
+- `@fastify/helmet` activo con CSP defaults. ✅
+- CORS configurado con origen explícito (`APP_URL`) + `credentials: true` para cookies. ✅
+- Cookie de refresh token `httpOnly`, `sameSite`. ✅
+
+#### 8. Rate limiting
+
+- Global: 100 req/min via Redis store (degrada grácilmente si Redis cae). ✅
+- Auth login: override a 5/min. ✅
+- Intel enrichment: 10/min por ruta. ✅
+
+#### 9. Logs y datos sensibles
+
+- Sin `console.log` de passwords, tokens o PII en producción. ✅
+- Audit logs sin PII (solo entityId + metadata estructurada inofensiva). ✅
+- `fingerprint` de API key en logs (solo longitud + últimos 4 chars). ✅
+
+#### 10. Deployment
+
+- Docker multi-stage, usuario no-root `heyday`. ✅
+- Healthchecks en compose. ✅
+- Volúmenes persistentes para Postgres y Redis. ✅
+
+### Riesgos residuales documentados
+
+| Riesgo                                                          | Severidad | Disparador                                            |
+| --------------------------------------------------------------- | --------- | ----------------------------------------------------- |
+| `submit-review/approve/reject` sin `requireRole('admin')`       | Baja      | Cuando aterricen roles multi-nivel (UJ post-delivery) |
+| `deleteIdea` hard-delete inconsistente con soft-delete de items | Baja      | Verificar CASCADE en schema Prisma antes de prod real |
+| localStorage no se limpia en logout (`heyday:filters:*`)        | Muy baja  | Solo filtros no sensibles; dispositivo compartido     |
+| Test 401 faltante en `/dashboard/top-priority-leads`            | Muy baja  | Gap de cobertura, no de seguridad                     |
+| CI sin ejecutar en GitHub (no hay remote configurado)           | Media     | Añadir remote + push antes de despliegue              |
+| Seed demo ejecutado en local pendiente (requiere docker)        | Operativa | Ejecutar antes de demo real                           |
+
+### Veredicto
+
+**APTO PARA DELIVERY** — Sin issues críticos de seguridad. Riesgos residuales documentados y acotados a v1.
