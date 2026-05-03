@@ -3,9 +3,9 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: **M2 (CRM Supporting) cerrado y revisado — UJ-07→10 ✅ (4/4)**. M1 cerrado ✅ (6/6 UJ). /review M1 PASS-WITH-NOTES (0 críticas). **/review M2 PASS-WITH-NOTES (0 críticas)**. Listo para arrancar M3.
-- **Last Completed**: **`/review` M3 — PASS-WITH-NOTES** (0 críticos). Fix aplicado: `GET /contacts/:id/data-export` escalado a `requireRole('admin')` + test 403. 403 tests totales (313 backend + 90 frontend).
-- **Next Step**: **M4 — Lead Intelligence** — UJ-16 Investigar empresa por URL (Anthropic + scraping). Leer design_summary + api_contracts sección Intel antes de planificar.
+- **Phase**: **M4 cerrado ✅ (6/6 UJ)**. Pendiente `/review` M4. 482 tests totales (379 backend + 103 frontend). Next: M5 Content Engine.
+- **Last Completed**: **UJ-21 Outbound → Task** — POST /intel/outbound-prep/:id/to-task. Toda la cadena M4 completada y comprometida (UJ-16→21).
+- **Next Step**: `/review` M4 → si pasa, arrancar **UJ-22 Generador de ideas** (POST /content/ideas + frontend /content/ideas).
 
 ## Estado verificable
 
@@ -14,7 +14,7 @@
 | `pnpm format:check` (root)   |   ✅   |
 | `pnpm lint` (root)           |   ✅   |
 | `pnpm typecheck` (3 ws)      |   ✅   |
-| `pnpm test` (403 tests)      |   ✅   |
+| `pnpm test` (482 tests)      |   ✅   |
 | Repo `.git` inicializado     |   ✅   |
 | CI GitHub Actions definido   |   ✅   |
 | Seed demo type-clean         |   ✅   |
@@ -135,15 +135,40 @@ Ver `docs/decision_log.md` (11 decisiones de Planning) y entradas relevantes del
 | UJ-14 Dashboard IA + Audit | ✅ completed |
 | UJ-15 GDPR toolkit         | ✅ completed |
 
+## Progreso M4
+
+| UJ                                | Estado       |
+| --------------------------------- | ------------ |
+| UJ-16 Investigar empresa URL      | ✅ completed |
+| UJ-17 Bulk import CSV             | ✅ completed |
+| UJ-18 Revisar pain points         | ✅ completed |
+| UJ-19 Service fit recommendations | ✅ completed |
+| UJ-20 Outbound Prep               | ✅ completed |
+| UJ-21 Outbound → Task             | ✅ completed |
+
+## Deuda específica UJ-16
+
+- **Validación end-to-end en navegador pendiente**: requiere docker compose up + ANTHROPIC_API_KEY real. Worker `enrichment` handler real conectado. Spec E2E Playwright no añadida (consistente con UJ-05/06).
+- **Google Places / Lighthouse / WHOIS diferidos**: solo `website_scrape` en UJ-16 v1. Activar cuando credentials Level 3 estén cargadas — no bloquea M4.
+- **CompanySizeSignal mapping**: prompt envía 'medium'/'large'; mapeados a `mid_26_100` en handler (Prisma enum no tiene esos valores). Aceptable para v1.
+- **Tab "Pain points" / "Service fit" en /companies/[id]**: diferido a UJ-18/19 polish.
+
+## Deuda específica M4 (UJ-17→21)
+
+- **Validación end-to-end en navegador pendiente**: todos los UJs M4 requieren docker compose up + ANTHROPIC_API_KEY real. Specs E2E Playwright no añadidas (consistente con UJ-05/06/16).
+- **Regeneración OutboundPrep inline (no queued)**: decisión consciente v1 para evitar schema BullMQ changes. Si el tiempo de respuesta supera 30s bajo carga, mover a queue con polling.
+- **Service fit regeneration inline**: mismo patrón que OutboundPrep. Ambos timeout 30s implícito del Fastify request.
+- **Tab "Outbound" en /intel/outbound page**: búsqueda simplificada por ID/nombre — no autocomplete completo. Suficiente para admin v1.
+- **createOutreachTask asigna al lead más reciente**: política simple (last createdAt, status != lost). Si emerge necesidad de picker, añadir en UJ futuro.
+
 ## Pasos para la siguiente sesión
 
 1. `/session-start`
-2. **UJ-13 Taxonomías editables** — pipelines, stages, verticals, service types editables desde el Admin Panel. Ver design docs para spec completa.
-3. **Deuda operativa (no bloquea M3)**:
-   - ~~Logout localStorage cleanup~~ ✅ cerrado en UJ-11 (Topbar limpia `heyday:*`).
+2. **`/review` M4** — verificar los 6 UJs de Lead Intelligence.
+3. Si review pasa → **UJ-22 Generador de ideas** (POST /content/ideas + frontend /content/ideas). Ver spec en user_journeys.md.
+4. **Deuda operativa (no bloquea M5)**:
    - Migración Prisma `add_contact_anonymized_at` (deuda UJ-03, requiere docker).
-   - Conectar repo a GitHub (`git remote add origin <url>` + `git push -u origin main`) para activar CI.
+   - Conectar repo a GitHub para activar CI.
    - Refactor `act()` warnings en `LeadFormDialog.test.tsx`.
-   - Specs Playwright E2E para activities, tags/search, imports, dashboard empty-DB state.
    - Test 401 para `/dashboard/top-priority-leads`.
    - Sanear CSV formula injection antes de UJ-27.
