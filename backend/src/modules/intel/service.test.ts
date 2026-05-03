@@ -73,6 +73,8 @@ function makeSourceHit(overrides: Partial<EnrichmentSourceHit> = {}): Enrichment
 function buildPrisma() {
   const companies = [makeCompany()];
   const runs = [makeRun()];
+  let companySeq = 0;
+  let runSeq = 0;
 
   const prisma = {
     company: {
@@ -89,8 +91,9 @@ function buildPrisma() {
         return null;
       }),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        companySeq += 1;
         const row = makeCompany({
-          id: 'company_new',
+          id: `company_new_${companySeq}`,
           name: data['name'] as string,
           website: data['website'] as string,
           domain: (data['domain'] as string | null) ?? null,
@@ -102,8 +105,9 @@ function buildPrisma() {
     },
     enrichmentRun: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        runSeq += 1;
         const row = makeRun({
-          id: 'run_new',
+          id: `run_new_${runSeq}`,
           companyId: data['companyId'] as string,
           triggeredById: data['triggeredById'] as string,
           status: data['status'] as EnrichmentRun['status'],
@@ -158,7 +162,7 @@ describe('IntelService', () => {
       'user_1',
     );
 
-    expect(result.run.company_id).toBe('company_new');
+    expect(result.run.company_id).toBe('company_new_1');
     expect(companies.some((item) => item.domain === 'nuevo.test')).toBe(true);
   });
 
@@ -260,5 +264,86 @@ describe('IntelService', () => {
         actorUserId: 'user_1',
       }),
     );
+  });
+
+  it('bulkImportCsv válido de 3 filas devuelve 3 run_ids y sin errores', async () => {
+    const { prisma } = buildPrisma();
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    const result = await service.bulkImportCsv(
+      Buffer.from(
+        [
+          'name,website',
+          'Acme,https://acme-2.test',
+          'Beta,https://beta.test',
+          'Gamma,https://gamma.test',
+        ].join('\n'),
+      ),
+      'leads.csv',
+      'user_1',
+    );
+
+    expect(result.count).toBe(3);
+    expect(result.runIds).toEqual(['run_new_1', 'run_new_2', 'run_new_3']);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('bulkImportCsv salta fila con URL inválida y procesa el resto', async () => {
+    const { prisma } = buildPrisma();
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    const result = await service.bulkImportCsv(
+      Buffer.from(
+        [
+          'name,website',
+          'Acme,https://acme-2.test',
+          'Beta,no-es-url',
+          'Gamma,https://gamma.test',
+        ].join('\n'),
+      ),
+      'leads.csv',
+      'user_1',
+    );
+
+    expect(result.count).toBe(2);
+    expect(result.runIds).toEqual(['run_new_1', 'run_new_2']);
+    expect(result.errors).toEqual([
+      { row: 2, message: 'La columna website debe contener una URL válida.' },
+    ]);
+  });
+
+  it('bulkImportCsv rechaza CSV con más de 100 filas', async () => {
+    const { prisma } = buildPrisma();
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+    const csv = [
+      'name,website',
+      ...Array.from(
+        { length: 101 },
+        (_, index) => `Empresa ${index + 1},https://empresa-${index + 1}.test`,
+      ),
+    ].join('\n');
+
+    await expect(
+      service.bulkImportCsv(Buffer.from(csv), 'leads.csv', 'user_1'),
+    ).rejects.toMatchObject({
+      code: 'CSV_TOO_MANY_ROWS',
+    });
+  });
+
+  it('bulkImportCsv salta fila con name vacío', async () => {
+    const { prisma } = buildPrisma();
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    const result = await service.bulkImportCsv(
+      Buffer.from(
+        ['name,website', ',https://sin-nombre.test', 'Gamma,https://gamma.test'].join('\n'),
+      ),
+      'leads.csv',
+      'user_1',
+    );
+
+    expect(result.count).toBe(1);
+    expect(result.runIds).toEqual(['run_new_1']);
+    expect(result.errors).toEqual([{ row: 1, message: 'El campo name es obligatorio.' }]);
   });
 });

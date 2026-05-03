@@ -1,14 +1,25 @@
 import type { EnrichmentRun, EnrichmentSourceHit, Prisma, PrismaClient } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import { parse } from 'csv-parse/sync';
 
 import { enqueue, QUEUE_NAMES } from '../../core/queue/queues.js';
 import { prisma as defaultPrisma } from '../../core/prisma/client.js';
 import { normalizeDomain } from '../companies/domain.js';
 import { auditService, type AuditService } from '../audit/service.js';
 import type {
+  BulkImportResult,
   EnrichmentRunCreateInput,
   EnrichmentRunDto,
   EnrichmentSourceHitDto,
 } from './schemas.js';
+
+const MAX_BULK_IMPORT_FILE_SIZE = 2 * 1024 * 1024;
+const MAX_BULK_IMPORT_ROWS = 100;
+
+interface BulkImportCsvRow {
+  name?: string;
+  website?: string;
+}
 
 export class IntelNotFoundError extends Error {
   constructor(message: string) {
@@ -18,10 +29,65 @@ export class IntelNotFoundError extends Error {
 }
 
 export class IntelValidationError extends Error {
-  constructor(message: string) {
+  readonly code?: string;
+
+  constructor(message: string, code?: string) {
     super(message);
     this.name = 'IntelValidationError';
+    this.code = code;
   }
+}
+
+export class IntelCsvTooLargeError extends IntelValidationError {
+  constructor() {
+    super('El archivo CSV no puede superar 2 MB.', 'CSV_TOO_LARGE');
+    this.name = 'IntelCsvTooLargeError';
+  }
+}
+
+export class IntelCsvTooManyRowsError extends IntelValidationError {
+  constructor() {
+    super(`El archivo CSV no puede superar ${MAX_BULK_IMPORT_ROWS} filas.`, 'CSV_TOO_MANY_ROWS');
+    this.name = 'IntelCsvTooManyRowsError';
+  }
+}
+
+function createBatchId(): string {
+  return `c${randomUUID().replace(/-/g, '')}`;
+}
+
+function parseBulkImportCsv(buffer: Buffer): BulkImportCsvRow[] {
+  return parse(buffer, {
+    columns: true,
+    trim: true,
+    skip_empty_lines: true,
+    bom: true,
+    delimiter: ',',
+  }) as BulkImportCsvRow[];
+}
+
+function normalizeWebsiteUrl(input: string): string {
+  const parsed = new URL(input);
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new IntelValidationError('La URL debe empezar por http:// o https://.');
+  }
+  return parsed.toString();
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
+}
+
+function toRowMessage(error: unknown, fallback: string): string {
+  if (error instanceof IntelValidationError) return error.message;
+  if (isUniqueConstraintError(error)) return 'El dominio ya fue procesado en este CSV.';
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
 }
 
 function toSourceHitDto(row: EnrichmentSourceHit): EnrichmentSourceHitDto {
@@ -142,6 +208,82 @@ export class IntelService {
     });
 
     return { run: toRunDto(run), jobId: job.jobId };
+  }
+
+  async bulkImportCsv(
+    file: Buffer,
+    _filename: string,
+    actorUserId: string,
+  ): Promise<BulkImportResult> {
+    if (file.byteLength > MAX_BULK_IMPORT_FILE_SIZE) {
+      throw new IntelCsvTooLargeError();
+    }
+
+    const rows = parseBulkImportCsv(file);
+    if (rows.length > MAX_BULK_IMPORT_ROWS) {
+      throw new IntelCsvTooManyRowsError();
+    }
+
+    const batchId = createBatchId();
+    const runIds: string[] = [];
+    const errors: BulkImportResult['errors'] = [];
+    const seenDomains = new Set<string>();
+
+    for (const [index, row] of rows.entries()) {
+      const rowNumber = index + 1;
+      const name = row.name?.trim() ?? '';
+      const website = row.website?.trim() ?? '';
+
+      if (!name) {
+        errors.push({ row: rowNumber, message: 'El campo name es obligatorio.' });
+        continue;
+      }
+
+      if (!website) {
+        errors.push({ row: rowNumber, message: 'El campo website es obligatorio.' });
+        continue;
+      }
+
+      let normalizedUrl: string;
+      try {
+        normalizedUrl = normalizeWebsiteUrl(website);
+      } catch {
+        errors.push({
+          row: rowNumber,
+          message: 'La columna website debe contener una URL válida.',
+        });
+        continue;
+      }
+
+      const domain = normalizeDomain(normalizedUrl);
+      if (!domain) {
+        errors.push({ row: rowNumber, message: 'No se pudo normalizar el dominio de website.' });
+        continue;
+      }
+
+      if (seenDomains.has(domain)) {
+        errors.push({ row: rowNumber, message: `Dominio duplicado en el CSV: ${domain}` });
+        continue;
+      }
+      seenDomains.add(domain);
+
+      try {
+        const result = await this.createEnrichmentRun({ inputUrl: normalizedUrl }, actorUserId);
+        runIds.push(result.run.id);
+      } catch (error) {
+        errors.push({
+          row: rowNumber,
+          message: toRowMessage(error, 'No se pudo crear la investigación para esta fila.'),
+        });
+      }
+    }
+
+    return {
+      batchId,
+      count: runIds.length,
+      runIds,
+      errors,
+    };
   }
 
   async getEnrichmentRun(id: string): Promise<EnrichmentRunDto> {

@@ -44,6 +44,20 @@ export const EnrichmentRunDtoSchema = z.object({
   service_fits_created_count: z.number().int().nonnegative().optional(),
 });
 
+export const BulkImportErrorSchema = z.object({
+  row: z.number().int().positive(),
+  message: z.string().min(1),
+});
+
+export const BulkImportResultSchema = z.object({
+  batchId: z.string().min(1),
+  count: z.number().int().nonnegative(),
+  runIds: z.array(z.string().min(1)),
+  errors: z.array(BulkImportErrorSchema),
+});
+
 export type EnrichmentRunCreateInput = z.infer<typeof EnrichmentRunCreateSchema>;
 export type EnrichmentRunDto = z.infer<typeof EnrichmentRunDtoSchema>;
 export type EnrichmentSourceHitDto = z.infer<typeof EnrichmentSourceHitDtoSchema>;
+export type BulkImportError = z.infer<typeof BulkImportErrorSchema>;
+export type BulkImportResult = z.infer<typeof BulkImportResultSchema>;

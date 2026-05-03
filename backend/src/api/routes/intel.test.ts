@@ -16,6 +16,7 @@ const ADMIN: PublicUserDto = {
 const createEnrichmentRunMock = vi.fn();
 const getEnrichmentRunMock = vi.fn();
 const listByCompanyMock = vi.fn();
+const bulkImportCsvMock = vi.fn();
 
 vi.mock('../../core/queue/connection.js', () => ({ redis: null }));
 
@@ -38,12 +39,14 @@ vi.mock('../../modules/intel/index.js', () => ({
       return body;
     },
   },
+  BulkImportResultSchema: { parse: (value: unknown) => value },
   EnrichmentRunIdParamsSchema: { parse: (value: unknown) => value as { id: string } },
   CompanyIdParamsSchema: { parse: (value: unknown) => value as { id: string } },
   intelService: {
     createEnrichmentRun: createEnrichmentRunMock,
     getEnrichmentRun: getEnrichmentRunMock,
     listByCompany: listByCompanyMock,
+    bulkImportCsv: bulkImportCsvMock,
   },
 }));
 
@@ -60,7 +63,30 @@ vi.mock('../../modules/intel/service.js', () => ({
       this.name = 'IntelValidationError';
     }
   },
+  IntelCsvTooLargeError: class extends Error {},
+  IntelCsvTooManyRowsError: class extends Error {},
 }));
+
+function buildMultipartBody(
+  filename: string,
+  contentType: string,
+  content: string,
+): { body: Buffer; boundary: string } {
+  const boundary = '----heyday-intel-boundary';
+  const body = Buffer.from(
+    [
+      `--${boundary}`,
+      `Content-Disposition: form-data; name="file"; filename="${filename}"`,
+      `Content-Type: ${contentType}`,
+      '',
+      content,
+      `--${boundary}--`,
+      '',
+    ].join('\r\n'),
+    'utf-8',
+  );
+  return { body, boundary };
+}
 
 describe('intel routes', () => {
   let app: FastifyInstance;
@@ -82,6 +108,12 @@ describe('intel routes', () => {
     listByCompanyMock.mockResolvedValue([
       { id: 'run_1', company_id: 'company_1', status: 'queued' },
     ]);
+    bulkImportCsvMock.mockResolvedValue({
+      batchId: 'batch_1',
+      count: 2,
+      runIds: ['run_1', 'run_2'],
+      errors: [],
+    });
     const { buildApp } = await import('../server.js');
     app = await buildApp({ disableRateLimit: true });
     token = signAccessToken({ sub: ADMIN.id, role: 'admin', sid: 'ses_intel_routes' });
@@ -166,5 +198,49 @@ describe('intel routes', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual([{ id: 'run_1', company_id: 'company_1', status: 'queued' }]);
+  });
+
+  it('POST bulk-import 202 con CSV válido', async () => {
+    const { body, boundary } = buildMultipartBody(
+      'leads.csv',
+      'text/csv',
+      'name,website\nAcme,https://acme.test\nBeta,https://beta.test',
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/intel/bulk-import',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload: body,
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({
+      batch_id: 'batch_1',
+      count: 2,
+      run_ids: ['run_1', 'run_2'],
+      errors: [],
+    });
+    expect(bulkImportCsvMock).toHaveBeenCalledWith(expect.any(Buffer), 'leads.csv', ADMIN.id);
+  });
+
+  it('POST bulk-import 401 sin auth', async () => {
+    const { body, boundary } = buildMultipartBody(
+      'leads.csv',
+      'text/csv',
+      'name,website\nAcme,https://acme.test',
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/intel/bulk-import',
+      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+      payload: body,
+    });
+
+    expect(response.statusCode).toBe(401);
   });
 });
