@@ -1,7 +1,9 @@
 import type {
+  Activity,
   Company,
   EnrichmentRun,
   EnrichmentSourceHit,
+  Lead,
   OutboundPrep,
   PainPoint,
   PainPointCategory,
@@ -176,6 +178,48 @@ function makeOutboundPrep(overrides: Partial<OutboundPrep> = {}): OutboundPrep {
   };
 }
 
+function makeLead(overrides: Partial<Lead> = {}): Lead {
+  const now = new Date('2026-05-02T10:00:00.000Z');
+  return {
+    id: 'lead_1',
+    companyId: 'company_1',
+    primaryContactId: null,
+    pipelineId: 'pipeline_1',
+    stageId: 'stage_1',
+    ownerId: 'owner_1',
+    source: 'manual',
+    status: 'open',
+    priorityScore: 0,
+    priorityManual: null,
+    nextActionAt: null,
+    lostReason: null,
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+    ...overrides,
+  };
+}
+
+function makeActivity(overrides: Partial<Activity> = {}): Activity {
+  const now = new Date('2026-05-02T10:00:00.000Z');
+  return {
+    id: 'activity_1',
+    kind: 'task',
+    entityType: 'lead',
+    entityId: 'lead_1',
+    title: 'Outreach: ACME',
+    body: 'Pitch inicial',
+    ownerId: 'owner_1',
+    dueAt: new Date('2026-05-09T10:00:00.000Z'),
+    completedAt: null,
+    remindAt: null,
+    createdById: 'user_1',
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
 function buildPrisma() {
   const companies = [makeCompany()];
   const runs = [makeRun()];
@@ -221,9 +265,12 @@ function buildPrisma() {
     }),
   ];
   const outboundPreps = [makeOutboundPrep()];
+  const leads = [makeLead()];
+  const activities: Activity[] = [];
   let companySeq = 0;
   let runSeq = 0;
   let painPointSeq = painPoints.length;
+  let activitySeq = 0;
 
   const withRelations = (row: PainPoint) => ({
     ...row,
@@ -269,6 +316,14 @@ function buildPrisma() {
           );
         return null;
       }),
+      findUnique: vi.fn(
+        async ({ where, select }: { where: { id: string }; select?: { name: true } }) => {
+          const row = companies.find((item) => item.id === where.id) ?? null;
+          if (!row) return null;
+          if (select?.name) return { name: row.name };
+          return row;
+        },
+      ),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         companySeq += 1;
         const row = makeCompany({
@@ -279,6 +334,49 @@ function buildPrisma() {
           createdById: (data['createdBy'] as { connect: { id: string } }).connect.id,
         });
         companies.push(row);
+        return row;
+      }),
+    },
+    lead: {
+      findFirst: vi.fn(
+        async ({
+          where,
+          orderBy,
+        }: {
+          where: Record<string, unknown>;
+          orderBy?: { createdAt?: 'asc' | 'desc' };
+        }) => {
+          const filtered = leads.filter((row) => {
+            if (where['companyId'] && row.companyId !== where['companyId']) return false;
+            if (where['deletedAt'] === null && row.deletedAt !== null) return false;
+            const statusFilter = where['status'] as { not?: Lead['status'] } | undefined;
+            if (statusFilter?.not && row.status === statusFilter.not) return false;
+            return true;
+          });
+          filtered.sort((a, b) =>
+            orderBy?.createdAt === 'asc'
+              ? a.createdAt.getTime() - b.createdAt.getTime()
+              : b.createdAt.getTime() - a.createdAt.getTime(),
+          );
+          return filtered[0] ?? null;
+        },
+      ),
+    },
+    activity: {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        activitySeq += 1;
+        const row = makeActivity({
+          id: `activity_${activitySeq}`,
+          kind: data['kind'] as Activity['kind'],
+          entityType: data['entityType'] as Activity['entityType'],
+          entityId: data['entityId'] as string,
+          title: (data['title'] as string | null) ?? null,
+          body: (data['body'] as string | null) ?? null,
+          ownerId: data['ownerId'] as string,
+          dueAt: (data['dueAt'] as Date | null) ?? null,
+          createdById: data['createdById'] as string,
+        });
+        activities.push(row);
         return row;
       }),
     },
@@ -551,7 +649,9 @@ function buildPrisma() {
 
   return {
     prisma,
+    activities,
     companies,
+    leads,
     runs,
     painPoints,
     categories,
@@ -827,6 +927,96 @@ describe('IntelService', () => {
       segment: 'Clinicas con operación comercial reactiva.',
       priority_score: 78,
     });
+  });
+
+  it('createOutreachTask crea Activity asociada al lead más reciente', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-03T12:00:00.000Z'));
+
+    const { activities, leads, prisma } = buildPrisma();
+    leads.push(
+      makeLead({
+        id: 'lead_2',
+        ownerId: 'owner_2',
+        createdAt: new Date('2026-05-03T10:00:00.000Z'),
+        updatedAt: new Date('2026-05-03T10:00:00.000Z'),
+      }),
+    );
+    const audit = { record: vi.fn(async () => {}) };
+    const service = new IntelService(prisma, audit as never);
+
+    const result = await service.createOutreachTask('company_1', { due_days: 7 }, 'user_actor');
+
+    expect(prisma.activity.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        kind: 'task',
+        entityType: 'lead',
+        entityId: 'lead_2',
+        ownerId: 'owner_2',
+        createdById: 'user_actor',
+      }),
+    });
+    expect(activities[0]).toMatchObject({
+      entityType: 'lead',
+      entityId: 'lead_2',
+      ownerId: 'owner_2',
+    });
+    expect(result).toEqual({
+      activity_id: 'activity_1',
+      lead_id: 'lead_2',
+      company_id: 'company_1',
+      due_at: '2026-05-10T12:00:00.000Z',
+      title: 'Outreach: ACME',
+      body: expect.stringContaining('Segmento:'),
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: 'user_actor',
+        action: 'outbound_prep.task_created',
+        entityType: 'activity',
+        entityId: 'activity_1',
+      }),
+    );
+
+    vi.useRealTimers();
+  });
+
+  it('createOutreachTask sin lead crea Activity contra company y usa actorUserId como owner', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-03T12:00:00.000Z'));
+
+    const { activities, leads, prisma } = buildPrisma();
+    leads.splice(0, leads.length);
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    const result = await service.createOutreachTask('company_1', { due_days: 3 }, 'user_actor');
+
+    expect(prisma.activity.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        entityType: 'company',
+        entityId: 'company_1',
+        ownerId: 'user_actor',
+      }),
+    });
+    expect(activities[0]).toMatchObject({
+      entityType: 'company',
+      entityId: 'company_1',
+      ownerId: 'user_actor',
+    });
+    expect(result.lead_id).toBeNull();
+    expect(result.due_at).toBe('2026-05-06T12:00:00.000Z');
+
+    vi.useRealTimers();
+  });
+
+  it('createOutreachTask throws OutboundPrepNotFoundError si no existe OutboundPrep', async () => {
+    const { outboundPreps, prisma } = buildPrisma();
+    outboundPreps.splice(0, outboundPreps.length);
+    const service = new IntelService(prisma, { record: vi.fn(async () => {}) } as never);
+
+    await expect(
+      service.createOutreachTask('company_1', { due_days: 7 }, 'user_actor'),
+    ).rejects.toBeInstanceOf(OutboundPrepNotFoundError);
   });
 
   it('regenerateOutboundPrep crea OutboundPrep cuando no existe previamente', async () => {

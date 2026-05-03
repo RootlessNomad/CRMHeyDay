@@ -100,6 +100,15 @@ export interface OutboundPrepDto {
   updated_at: string;
 }
 
+export interface OutboundTaskResult {
+  activity_id: string;
+  lead_id: string | null;
+  company_id: string;
+  due_at: string;
+  title: string;
+  body: string;
+}
+
 export interface ListPainPointsQuery {
   company_id?: string;
   confidence?: PainPointConfidence;
@@ -209,6 +218,16 @@ export async function updateOutboundPrep(
   return apiFetch<OutboundPrepDto>(`/intel/outbound-prep/${companyId}`, {
     method: 'PATCH',
     json: input,
+  });
+}
+
+export async function createOutreachTask(
+  companyId: string,
+  dueDays = 7,
+): Promise<OutboundTaskResult> {
+  return apiFetch<OutboundTaskResult>(`/intel/outbound-prep/${companyId}/to-task`, {
+    method: 'POST',
+    json: { due_days: dueDays },
   });
 }
 

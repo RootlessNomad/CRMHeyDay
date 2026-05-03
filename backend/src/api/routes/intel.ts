@@ -9,6 +9,7 @@ import {
   EnrichmentRunIdParamsSchema,
   OutboundPrepQuerySchema,
   OutboundPrepRegenerateSchema,
+  OutboundPrepToTaskSchema,
   OutboundPrepUpdateSchema,
   PainPointCreateSchema,
   PainPointListQuerySchema,
@@ -126,6 +127,20 @@ export async function registerIntelRoutes(app: FastifyInstance): Promise<void> {
     try {
       const result = await intelService.updateOutboundPrep(company_id, body, actorUserId);
       return reply.code(200).send(result);
+    } catch (error) {
+      rethrowIntelError(app, error);
+    }
+  });
+
+  app.post('/intel/outbound-prep/:company_id/to-task', adminGuard, async (request, reply) => {
+    const { company_id } = OutboundPrepQuerySchema.parse(request.params);
+    const body = OutboundPrepToTaskSchema.parse(request.body);
+    const actorUserId = request.authUser?.id;
+    if (!actorUserId) throw app.httpErrors.unauthorized();
+
+    try {
+      const result = await intelService.createOutreachTask(company_id, body, actorUserId);
+      return reply.code(201).send(result);
     } catch (error) {
       rethrowIntelError(app, error);
     }

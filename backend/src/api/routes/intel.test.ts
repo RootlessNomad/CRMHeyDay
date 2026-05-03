@@ -35,6 +35,7 @@ const regenerateServiceFitMock = vi.fn();
 const getOutboundPrepMock = vi.fn();
 const regenerateOutboundPrepMock = vi.fn();
 const updateOutboundPrepMock = vi.fn();
+const createOutreachTaskMock = vi.fn();
 const getUserForTokenMock = vi.fn();
 
 vi.mock('../../core/queue/connection.js', () => ({ redis: null }));
@@ -63,6 +64,7 @@ vi.mock('../../modules/intel/index.js', () => ({
   CompanyIdParamsSchema: { parse: (value: unknown) => value as { id: string } },
   OutboundPrepQuerySchema: { parse: (value: unknown) => value },
   OutboundPrepRegenerateSchema: { parse: (value: unknown) => value },
+  OutboundPrepToTaskSchema: { parse: (value: unknown) => value },
   OutboundPrepUpdateSchema: { parse: (value: unknown) => value },
   PainPointListQuerySchema: { parse: (value: unknown) => value },
   PainPointCreateSchema: { parse: (value: unknown) => value },
@@ -83,6 +85,7 @@ vi.mock('../../modules/intel/index.js', () => ({
     getOutboundPrep: getOutboundPrepMock,
     regenerateOutboundPrep: regenerateOutboundPrepMock,
     updateOutboundPrep: updateOutboundPrepMock,
+    createOutreachTask: createOutreachTaskMock,
   },
 }));
 
@@ -303,6 +306,14 @@ describe('intel routes', () => {
       created_at: '2026-05-02T10:00:00.000Z',
       updated_at: '2026-05-02T10:05:00.000Z',
     });
+    createOutreachTaskMock.mockResolvedValue({
+      activity_id: 'activity_1',
+      lead_id: 'lead_1',
+      company_id: 'company_1',
+      due_at: '2026-05-10T10:00:00.000Z',
+      title: 'Outreach: ACME',
+      body: 'Segmento: Clinicas privadas\nNecesidad: Mejorar velocidad comercial',
+    });
     const { buildApp } = await import('../server.js');
     app = await buildApp({ disableRateLimit: true });
     token = signAccessToken({ sub: ADMIN.id, role: 'admin', sid: 'ses_intel_routes' });
@@ -498,6 +509,40 @@ describe('intel routes', () => {
       { priority_score: 90, sdr_notes: 'Insistir con caso similar' },
       ADMIN.id,
     );
+  });
+
+  it('POST outbound-prep/:company_id/to-task 201 con dto', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/intel/outbound-prep/company_1/to-task',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { due_days: 10 },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toEqual({
+      activity_id: 'activity_1',
+      lead_id: 'lead_1',
+      company_id: 'company_1',
+      due_at: '2026-05-10T10:00:00.000Z',
+      title: 'Outreach: ACME',
+      body: 'Segmento: Clinicas privadas\nNecesidad: Mejorar velocidad comercial',
+    });
+    expect(createOutreachTaskMock).toHaveBeenCalledWith('company_1', { due_days: 10 }, ADMIN.id);
+  });
+
+  it('POST outbound-prep/:company_id/to-task 404 si no existe OutboundPrep', async () => {
+    const { OutboundPrepNotFoundError } = await import('../../modules/intel/service.js');
+    createOutreachTaskMock.mockRejectedValueOnce(new OutboundPrepNotFoundError('company_404'));
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/intel/outbound-prep/company_404/to-task',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { due_days: 7 },
+    });
+
+    expect(response.statusCode).toBe(404);
   });
 
   it('POST service-fit/regenerate 200 con data', async () => {

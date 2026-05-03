@@ -183,3 +183,19 @@ export type OutboundPrepDto = z.infer<typeof OutboundPrepDtoSchema>;
 export type OutboundPrepQuery = z.infer<typeof OutboundPrepQuerySchema>;
 export type OutboundPrepRegenerateInput = z.infer<typeof OutboundPrepRegenerateSchema>;
 export type OutboundPrepUpdateInput = z.infer<typeof OutboundPrepUpdateSchema>;
+
+export const OutboundPrepToTaskSchema = z.object({
+  due_days: z.number().int().min(1).max(90).default(7),
+});
+
+export const OutboundTaskDtoSchema = z.object({
+  activity_id: z.string(),
+  lead_id: z.string().nullable(),
+  company_id: z.string(),
+  due_at: z.string(),
+  title: z.string(),
+  body: z.string(),
+});
+
+export type OutboundPrepToTaskInput = z.infer<typeof OutboundPrepToTaskSchema>;
+export type OutboundTaskDto = z.infer<typeof OutboundTaskDtoSchema>;

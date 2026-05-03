@@ -23,6 +23,7 @@ import type {
   EnrichmentRunDto,
   EnrichmentSourceHitDto,
   OutboundPrepDto,
+  OutboundTaskDto,
   OutboundPrepUpdateInput,
   PainPointCreateInput,
   PainPointDto,
@@ -516,6 +517,71 @@ export class IntelService {
     });
 
     return row ? toOutboundPrepDto(row) : null;
+  }
+
+  async createOutreachTask(
+    companyId: string,
+    input: { due_days: number },
+    actorUserId: string,
+  ): Promise<OutboundTaskDto> {
+    const prep = await this.db.outboundPrep.findUnique({ where: { companyId } });
+    if (!prep) throw new OutboundPrepNotFoundError(companyId);
+
+    const lead = await this.db.lead.findFirst({
+      where: { companyId, deletedAt: null, status: { not: 'lost' } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const entityType = lead ? 'lead' : 'company';
+    const entityId = lead ? lead.id : companyId;
+    const ownerId = lead ? lead.ownerId : actorUserId;
+    const dueAt = new Date(Date.now() + input.due_days * 24 * 60 * 60 * 1000);
+
+    const company = await this.db.company.findUnique({
+      where: { id: companyId },
+      select: { name: true },
+    });
+    const title = `Outreach: ${company?.name ?? companyId}`;
+    const body = [
+      prep.segment ? `Segmento: ${prep.segment}` : null,
+      prep.likelyNeed ? `Necesidad: ${prep.likelyNeed}` : null,
+      prep.outreachAngle ? `Ángulo: ${prep.outreachAngle}` : null,
+      prep.valueProposition ? `Propuesta de valor: ${prep.valueProposition}` : null,
+      prep.servicePitch ? `Pitch: ${prep.servicePitch}` : null,
+    ]
+      .filter((line): line is string => Boolean(line))
+      .join('\n')
+      .slice(0, 2000);
+
+    const activity = await this.db.activity.create({
+      data: {
+        kind: 'task',
+        entityType,
+        entityId,
+        title,
+        body,
+        ownerId,
+        dueAt,
+        createdById: actorUserId,
+      },
+    });
+
+    await this.audit.record({
+      actorUserId,
+      action: 'outbound_prep.task_created',
+      entityType: 'activity',
+      entityId: activity.id,
+      metadata: { companyId, activityId: activity.id, leadId: lead?.id ?? null },
+    });
+
+    return {
+      activity_id: activity.id,
+      lead_id: lead?.id ?? null,
+      company_id: companyId,
+      due_at: dueAt.toISOString(),
+      title,
+      body,
+    };
   }
 
   async regenerateOutboundPrep(

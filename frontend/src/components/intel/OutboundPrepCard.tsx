@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import {
+  createOutreachTask,
   getOutboundPrep,
   regenerateOutboundPrep,
   type OutboundPrepDto,
@@ -178,6 +179,18 @@ export function OutboundPrepCard({ companyId }: { companyId: string }): JSX.Elem
     },
   });
 
+  const createTaskMutation = useMutation({
+    mutationFn: () => createOutreachTask(normalizedCompanyId),
+    onSuccess: (result) => {
+      toast.success(
+        `Tarea creada — vence el ${new Date(result.due_at).toLocaleDateString('es-ES')}`,
+      );
+    },
+    onError: () => {
+      toast.error('No se pudo crear la tarea de outreach.');
+    },
+  });
+
   function updateDraftField(
     field: keyof UpdateOutboundPrepInput,
     value: string | number | null,
@@ -267,6 +280,14 @@ export function OutboundPrepCard({ companyId }: { companyId: string }): JSX.Elem
               className="border-border bg-surface-muted hover:bg-bg rounded-md border px-4 py-2 text-sm font-medium transition"
             >
               Copiar todo al portapapeles
+            </button>
+            <button
+              type="button"
+              onClick={() => createTaskMutation.mutate()}
+              disabled={createTaskMutation.isPending}
+              className="border-border bg-surface-muted hover:bg-bg rounded-md border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {createTaskMutation.isPending ? 'Creando tarea…' : 'Crear tarea de outreach'}
             </button>
             <button
               type="button"
