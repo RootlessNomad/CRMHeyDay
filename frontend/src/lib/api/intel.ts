@@ -48,6 +48,52 @@ export interface BulkImportResponse {
   errors: Array<{ row: number; message: string }>;
 }
 
+export type PainPointConfidence = 'observed' | 'inferred' | 'speculative';
+
+export interface PainPointDto {
+  id: string;
+  company_id: string;
+  company_name: string;
+  category_id: string;
+  category_key: string;
+  category_label_es: string;
+  confidence: PainPointConfidence;
+  evidence_text: string;
+  evidence_source_url: string | null;
+  evidence_timestamp: string | null;
+  detected_by: string;
+  human_verified: boolean;
+  verified_by_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListPainPointsQuery {
+  company_id?: string;
+  confidence?: PainPointConfidence;
+  category_id?: string;
+  human_verified?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListPainPointsResponse {
+  data: PainPointDto[];
+  total: number;
+}
+
+function buildPainPointsSearchParams(query: ListPainPointsQuery): string {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === '') continue;
+    params.set(key, String(value));
+  }
+
+  const serialized = params.toString();
+  return serialized ? `?${serialized}` : '';
+}
+
 export async function createEnrichmentRun(body: {
   company_id?: string;
   input_url?: string;
@@ -66,6 +112,28 @@ export async function listEnrichmentRunsByCompany(
   companyId: string,
 ): Promise<EnrichmentRunSummaryDto[]> {
   return apiFetch<EnrichmentRunSummaryDto[]>(`/intel/companies/${companyId}/enrichment`);
+}
+
+export async function listPainPoints(
+  query: ListPainPointsQuery = {},
+): Promise<ListPainPointsResponse> {
+  return apiFetch<ListPainPointsResponse>(
+    `/intel/pain-points${buildPainPointsSearchParams(query)}`,
+  );
+}
+
+export async function updatePainPoint(
+  id: string,
+  body: Partial<Pick<PainPointDto, 'human_verified'>>,
+): Promise<PainPointDto> {
+  return apiFetch<PainPointDto>(`/intel/pain-points/${id}`, {
+    method: 'PATCH',
+    json: body,
+  });
+}
+
+export async function deletePainPoint(id: string): Promise<void> {
+  await apiFetch<void>(`/intel/pain-points/${id}`, { method: 'DELETE' });
 }
 
 export async function bulkImportCsv(file: File): Promise<BulkImportResponse> {
