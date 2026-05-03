@@ -19,6 +19,7 @@ import { markFailed, markRunning, markSucceeded } from '../core/queue/mirror.js'
 import { closeQueues } from '../core/queue/queues.js';
 import { QUEUE_NAMES, QUEUE_SCHEMAS, type JobResult, type QueueName } from '../core/queue/types.js';
 import { runEnrichment } from '../modules/intel/handler.js';
+import { runContentGeneration, runIdeaGeneration } from '../modules/content/handlers.js';
 
 const log = childLogger({ component: 'worker' });
 
@@ -33,11 +34,8 @@ type Handler<N extends QueueName> = (
 
 const handlers: { [N in QueueName]: Handler<N> } = {
   [QUEUE_NAMES.enrichment]: async (payload) => runEnrichment(payload as never),
-  [QUEUE_NAMES.contentGeneration]: async (payload, ctx) => {
-    // TODO UJ-23: generar ContentVersion vía Anthropic.
-    log.info({ jobId: ctx.jobId, queue: ctx.queue }, 'content_generation placeholder ejecutado');
-    return { ok: true, summary: { placeholder: true } };
-  },
+  [QUEUE_NAMES.contentIdea]: async (payload) => runIdeaGeneration(payload as never),
+  [QUEUE_NAMES.contentGeneration]: async (payload) => runContentGeneration(payload as never),
   [QUEUE_NAMES.contentAdapt]: async (payload, ctx) => {
     // TODO UJ-23: re-render ContentVersion para otro canal.
     log.info({ jobId: ctx.jobId, queue: ctx.queue }, 'content_adapt placeholder ejecutado');

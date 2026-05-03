@@ -30,6 +30,7 @@ import { registerErrorHandler } from './plugins/error-handler.js';
 import { registerActivitiesRoutes } from './routes/activities.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerCompaniesRoutes } from './routes/companies.js';
+import { registerContentRoutes } from './routes/content.js';
 import { registerContactsRoutes } from './routes/contacts.js';
 import { registerCredentialsRoutes } from './routes/credentials.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
@@ -117,6 +118,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await registerAdminRoutes(app);
   await registerAuthRoutes(app);
   await registerCompaniesRoutes(app);
+  await registerContentRoutes(app);
   await registerContactsRoutes(app);
   await registerCredentialsRoutes(app);
   await registerDashboardRoutes(app);

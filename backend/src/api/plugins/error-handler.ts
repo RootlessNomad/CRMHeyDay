@@ -55,6 +55,7 @@ import {
   ContactNotFoundError,
   ContactPrimaryConflictError,
 } from '../../modules/contacts/service.js';
+import { ContentDailyLimitError, IdeaNotFoundError } from '../../modules/content/service.js';
 import { OutboundPrepNotFoundError, PainPointNotFoundError } from '../../modules/intel/service.js';
 import {
   InvalidLeadTransitionError,
@@ -136,6 +137,20 @@ export function registerErrorHandler(app: FastifyInstance): void {
         code: 'COMPANY_DOMAIN_CONFLICT',
         message: err.message,
         details: { existing_id: err.existingId },
+      });
+    }
+
+    if (err instanceof IdeaNotFoundError || hasName(err, 'IdeaNotFoundError')) {
+      return send(reply, 404, {
+        code: 'IDEA_NOT_FOUND',
+        message: messageOf(err, 'Idea not found'),
+      });
+    }
+
+    if (err instanceof ContentDailyLimitError || hasName(err, 'ContentDailyLimitError')) {
+      return send(reply, 429, {
+        code: 'CONTENT_DAILY_LIMIT',
+        message: messageOf(err, 'Daily content generation limit reached'),
       });
     }
 

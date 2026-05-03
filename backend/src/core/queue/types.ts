@@ -10,6 +10,7 @@ import { z } from 'zod';
 // ------------------------------------------------------------------
 export const QUEUE_NAMES = {
   enrichment: 'enrichment',
+  contentIdea: 'content_idea',
   contentGeneration: 'content_generation',
   contentAdapt: 'content_adapt',
   integrationTest: 'integration_test',
@@ -32,6 +33,18 @@ export const EnrichmentPayloadSchema = z.object({
 });
 export type EnrichmentPayload = z.infer<typeof EnrichmentPayloadSchema>;
 
+export const ContentIdeaPayloadSchema = z.object({
+  pillarId: z.string().min(1),
+  serviceLineId: z.string().min(1).optional(),
+  icpVertical: z
+    .enum(['physiotherapy', 'pilates', 'yoga', 'gym_fitness', 'bakery', 'cafe', 'other'])
+    .optional(),
+  briefEs: z.string().min(1).max(2000),
+  actorUserId: z.string().min(1),
+  count: z.number().int().min(3).max(10).default(5),
+});
+export type ContentIdeaPayload = z.infer<typeof ContentIdeaPayloadSchema>;
+
 /**
  * Generación de un borrador inicial para un ContentItem (pillar + canal).
  */
@@ -39,6 +52,7 @@ export const ContentGenerationPayloadSchema = z.object({
   contentItemId: z.string().min(1),
   actorUserId: z.string().min(1),
   modelOverride: z.string().optional(),
+  guidance: z.string().max(2000).optional(),
 });
 export type ContentGenerationPayload = z.infer<typeof ContentGenerationPayloadSchema>;
 
@@ -67,6 +81,7 @@ export type IntegrationTestPayload = z.infer<typeof IntegrationTestPayloadSchema
 // ------------------------------------------------------------------
 export const QUEUE_SCHEMAS = {
   [QUEUE_NAMES.enrichment]: EnrichmentPayloadSchema,
+  [QUEUE_NAMES.contentIdea]: ContentIdeaPayloadSchema,
   [QUEUE_NAMES.contentGeneration]: ContentGenerationPayloadSchema,
   [QUEUE_NAMES.contentAdapt]: ContentAdaptPayloadSchema,
   [QUEUE_NAMES.integrationTest]: IntegrationTestPayloadSchema,
@@ -74,6 +89,7 @@ export const QUEUE_SCHEMAS = {
 
 export type PayloadForQueue = {
   [QUEUE_NAMES.enrichment]: EnrichmentPayload;
+  [QUEUE_NAMES.contentIdea]: ContentIdeaPayload;
   [QUEUE_NAMES.contentGeneration]: ContentGenerationPayload;
   [QUEUE_NAMES.contentAdapt]: ContentAdaptPayload;
   [QUEUE_NAMES.integrationTest]: IntegrationTestPayload;

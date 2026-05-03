@@ -48,6 +48,7 @@ function getQueues(): QueuesMap {
   if (globalForQueues.__heydayQueues) return globalForQueues.__heydayQueues;
   const map: QueuesMap = {
     [QUEUE_NAMES.enrichment]: buildQueue(QUEUE_NAMES.enrichment),
+    [QUEUE_NAMES.contentIdea]: buildQueue(QUEUE_NAMES.contentIdea),
     [QUEUE_NAMES.contentGeneration]: buildQueue(QUEUE_NAMES.contentGeneration),
     [QUEUE_NAMES.contentAdapt]: buildQueue(QUEUE_NAMES.contentAdapt),
     [QUEUE_NAMES.integrationTest]: buildQueue(QUEUE_NAMES.integrationTest),
