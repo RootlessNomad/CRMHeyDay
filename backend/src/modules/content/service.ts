@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { ContentItem, PrismaClient } from '@prisma/client';
 
 import { enqueue as defaultEnqueue, QUEUE_NAMES } from '../../core/queue/queues.js';
 import { prisma as defaultPrisma } from '../../core/prisma/client.js';
@@ -12,11 +12,13 @@ import type {
   ContentVersionDto,
   CreateVersionBody,
   DraftRequestInput,
+  ExportFormat,
   IdeaCreateManualInput,
   IdeaDto,
   IdeaListQuery,
   IdeaUpdateInput,
   ItemSummaryDto,
+  LibraryQuery,
 } from './schemas.js';
 import { toApprovalEventDto, toIdeaDto, toVersionDto } from './schemas.js';
 
@@ -96,11 +98,93 @@ function toCalendarItemDto(row: {
   };
 }
 
+function sanitizeCsvCell(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
+function buildMarkdown(item: ContentItemDetailDto): string {
+  const v = item.current_version;
+  const lines = [
+    '---',
+    `canal: ${item.channel}`,
+    `pilar: ${item.idea.pillar_label}`,
+    `estado: ${item.status}`,
+    item.scheduled_for ? `scheduled_for: ${item.scheduled_for}` : null,
+    v?.hashtags?.length ? `hashtags: [${v.hashtags.map((h) => `"${h}"`).join(', ')}]` : null,
+    '---',
+    '',
+    v?.title ? `# ${v.title}` : `# ${item.idea.title}`,
+    '',
+    v?.body ?? '',
+  ];
+  return lines.filter((line): line is string => line !== null).join('\n');
+}
+
+function buildPlain(item: ContentItemDetailDto): string {
+  const v = item.current_version;
+  const parts = [v?.title ?? item.idea.title, '', v?.body ?? ''];
+  if (v?.hashtags?.length) parts.push('', v.hashtags.map((h) => `#${h}`).join(' '));
+  return parts.join('\n');
+}
+
+function buildIcs(item: ContentItemDetailDto): string {
+  const now = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const dateVal = item.scheduled_for ? item.scheduled_for.replace(/-/g, '') : now.slice(0, 8);
+  const title = (item.current_version?.title ?? item.idea.title).replace(/[\\;,]/g, '\\$&');
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//HeyDay CRM//Content//ES',
+    'BEGIN:VEVENT',
+    `UID:${item.id}@heyday`,
+    `DTSTAMP:${now}`,
+    `DTSTART;VALUE=DATE:${dateVal}`,
+    `DTEND;VALUE=DATE:${dateVal}`,
+    `SUMMARY:${title}`,
+    `DESCRIPTION:Canal: ${item.channel}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+}
+
+function buildCsv(item: ContentItemDetailDto): string {
+  const headers = [
+    'id',
+    'canal',
+    'estado',
+    'titulo',
+    'pillar',
+    'scheduled_for',
+    'hashtags',
+    'cuerpo',
+  ];
+  const v = item.current_version;
+  const row = [
+    item.id,
+    item.channel,
+    item.status,
+    v?.title ?? item.idea.title,
+    item.idea.pillar_label,
+    item.scheduled_for ?? '',
+    v?.hashtags?.join(' ') ?? '',
+    v?.body ?? '',
+  ].map(sanitizeCsvCell);
+  const escape = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  return [headers.map(escape).join(','), row.map(escape).join(',')].join('\n');
+}
+
 const itemDetailInclude = {
   currentVersion: true,
   versions: {
     orderBy: { versionNumber: 'desc' as const },
     take: 5,
+  },
+  idea: {
+    include: {
+      pillar: {
+        select: { labelEs: true },
+      },
+    },
   },
 };
 
@@ -135,6 +219,7 @@ export class ContentService {
     currentVersionId: string | null;
     currentVersion: Parameters<typeof toVersionDto>[0] | null;
     versions: Parameters<typeof toVersionDto>[0][];
+    idea: { title: string; pillar: { labelEs: string } };
     createdById: string;
     createdAt: Date;
     updatedAt: Date;
@@ -148,6 +233,10 @@ export class ContentService {
       current_version_id: row.currentVersionId,
       current_version: row.currentVersion ? toVersionDto(row.currentVersion) : null,
       versions: row.versions.map(toVersionDto),
+      idea: {
+        title: row.idea.title,
+        pillar_label: row.idea.pillar.labelEs,
+      },
       created_by_id: row.createdById,
       created_at: row.createdAt.toISOString(),
       updated_at: row.updatedAt.toISOString(),
@@ -164,6 +253,7 @@ export class ContentService {
     currentVersionId: string | null;
     currentVersion: Parameters<typeof toVersionDto>[0] | null;
     versions: Parameters<typeof toVersionDto>[0][];
+    idea: { title: string; pillar: { labelEs: string } };
     createdById: string;
     createdAt: Date;
     updatedAt: Date;
@@ -300,6 +390,85 @@ export class ContentService {
     });
     if (!row) throw new ItemNotFoundError(id);
     return this.toDetailDto(row);
+  }
+
+  async exportItem(
+    itemId: string,
+    format: ExportFormat,
+    actorUserId: string,
+  ): Promise<{ content: string; filename: string; contentType: string }> {
+    const item = await this.getItemById(itemId);
+    if (!['approved', 'exported'].includes(item.status)) {
+      throw new InvalidTransitionError(item.status, 'export');
+    }
+
+    if (item.status === 'approved') {
+      await this.db.contentItem.update({
+        where: { id: itemId },
+        data: { status: 'exported' },
+      });
+    }
+
+    await this.audit.record({
+      actorUserId,
+      action: 'content.item.exported',
+      entityType: 'ContentItem',
+      entityId: itemId,
+      metadata: { itemId, format },
+    });
+
+    const slug = item.idea.title.toLowerCase().replace(/\s+/g, '-').slice(0, 40);
+
+    switch (format) {
+      case 'md':
+        return {
+          content: buildMarkdown(item),
+          filename: `${slug}.md`,
+          contentType: 'text/markdown',
+        };
+      case 'plain':
+        return { content: buildPlain(item), filename: `${slug}.txt`, contentType: 'text/plain' };
+      case 'ics':
+        return { content: buildIcs(item), filename: `${slug}.ics`, contentType: 'text/calendar' };
+      case 'csv':
+        return { content: buildCsv(item), filename: `${slug}.csv`, contentType: 'text/csv' };
+    }
+  }
+
+  async listLibrary(query: LibraryQuery): Promise<{ total: number; items: ItemSummaryDto[] }> {
+    const where = {
+      deletedAt: null,
+      status: query.status
+        ? { equals: query.status as ContentItem['status'] }
+        : { not: 'archived' as const },
+      ...(query.channel ? { channel: query.channel } : {}),
+      ...(query.pillar_id ? { idea: { pillarId: query.pillar_id } } : {}),
+      ...(query.q
+        ? {
+            OR: [
+              { idea: { title: { contains: query.q, mode: 'insensitive' as const } } },
+              { currentVersion: { body: { contains: query.q, mode: 'insensitive' as const } } },
+            ],
+          }
+        : {}),
+    };
+
+    const [total, rows] = await Promise.all([
+      this.db.contentItem.count({ where }),
+      this.db.contentItem.findMany({
+        where,
+        include: {
+          idea: {
+            include: { pillar: { select: { labelEs: true } } },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: query.limit,
+        skip: query.offset,
+      }),
+    ]);
+
+    return { total, items: rows.map(toItemSummaryDto) };
   }
 
   async listCalendarItems(query: CalendarQuery): Promise<CalendarItemDto[]> {

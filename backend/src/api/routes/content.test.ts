@@ -29,6 +29,8 @@ const rejectItemMock = vi.fn();
 const listPendingReviewsMock = vi.fn();
 const listCalendarItemsMock = vi.fn();
 const rescheduleItemMock = vi.fn();
+const exportItemMock = vi.fn();
+const listLibraryMock = vi.fn();
 const getUserForTokenMock = vi.fn();
 
 vi.mock('../../core/queue/connection.js', () => ({ redis: null }));
@@ -145,6 +147,12 @@ vi.mock('../../modules/content/index.js', () => {
           })
           .parse(value),
     },
+    ExportQuerySchema: {
+      parse: (v: unknown) => ({ format: (v as { format?: string }).format }),
+    },
+    LibraryQuerySchema: {
+      parse: (v: unknown) => ({ limit: 50, offset: 0, ...(v as Record<string, unknown>) }),
+    },
     ReviewsListQuerySchema: {
       parse: (value: unknown) =>
         z
@@ -175,6 +183,8 @@ vi.mock('../../modules/content/index.js', () => {
       listPendingReviews: listPendingReviewsMock,
       listCalendarItems: listCalendarItemsMock,
       rescheduleItem: rescheduleItemMock,
+      exportItem: exportItemMock,
+      listLibrary: listLibraryMock,
     },
   };
 });
@@ -408,6 +418,24 @@ describe('content routes', () => {
       pillar_label: 'Educacion',
       current_version_id: 'version_2',
     });
+    exportItemMock.mockResolvedValue({
+      content: '# Test',
+      filename: 'test.md',
+      contentType: 'text/markdown',
+    });
+    listLibraryMock.mockResolvedValue({
+      total: 1,
+      items: [
+        {
+          id: 'item_1',
+          channel: 'instagram',
+          status: 'approved',
+          idea_title: 'Idea 1',
+          pillar_label: 'Educacion',
+          scheduled_for: null,
+        },
+      ],
+    });
     const server = await import('../server.js');
     app = await server.buildApp({ disableRateLimit: true });
     token = signAccessToken({ sub: ADMIN.id, role: 'admin', sid: 'ses_content_routes' });
@@ -533,6 +561,18 @@ describe('content routes', () => {
     expect(rescheduleItemMock).toHaveBeenCalledWith('item_1', '2026-05-09', ADMIN.id);
   });
 
+  it('POST /content/items/:id/export?format=md -> returns 200 con header content-disposition', async () => {
+    const res = await authInject(app, token, {
+      method: 'POST',
+      url: '/content/items/item_1/export?format=md',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-disposition']).toBe('attachment; filename="test.md"');
+    expect(res.body).toBe('# Test');
+    expect(exportItemMock).toHaveBeenCalledWith('item_1', 'md', ADMIN.id);
+  });
+
   it('POST /content/items/:id/versions -> 201 con ContentVersionDto', async () => {
     const res = await authInject(app, token, {
       method: 'POST',
@@ -634,6 +674,26 @@ describe('content routes', () => {
       limit: 20,
       offset: 0,
     });
+  });
+
+  it('GET /content/library -> returns 200 con { total, items }', async () => {
+    const res = await authInject(app, token, { method: 'GET', url: '/content/library' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      total: 1,
+      items: [
+        {
+          id: 'item_1',
+          channel: 'instagram',
+          status: 'approved',
+          idea_title: 'Idea 1',
+          pillar_label: 'Educacion',
+          scheduled_for: null,
+        },
+      ],
+    });
+    expect(listLibraryMock).toHaveBeenCalledWith({ limit: 50, offset: 0 });
   });
 });
 

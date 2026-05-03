@@ -1,7 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { CalendarQuerySchema, RescheduleBodySchema } from '../../modules/content/schemas.js';
+import {
+  CalendarQuerySchema,
+  ExportQuerySchema,
+  LibraryQuerySchema,
+  RescheduleBodySchema,
+  type ExportFormat,
+  type LibraryQuery,
+} from '../../modules/content/schemas.js';
 import {
   ApprovalTransitionBodySchema,
   ConflictError,
@@ -206,5 +213,29 @@ export async function registerContentRoutes(app: FastifyInstance): Promise<void>
     const query = ReviewsListQuerySchema.parse(request.query);
     const result = await contentService.listPendingReviews(query);
     return reply.code(200).send(result);
+  });
+
+  app.get('/content/library', authGuard, async (request, reply) => {
+    const query: LibraryQuery = LibraryQuerySchema.parse(request.query);
+    const result = await contentService.listLibrary(query);
+    return reply.code(200).send(result);
+  });
+
+  app.post('/content/items/:id/export', authGuard, async (request, reply) => {
+    const { id } = ItemIdParamsSchema.parse(request.params);
+    const { format }: { format: ExportFormat } = ExportQuerySchema.parse(request.query);
+    const actorUserId = request.authUser?.id;
+    if (!actorUserId) throw app.httpErrors.unauthorized();
+
+    try {
+      const result = await contentService.exportItem(id, format, actorUserId);
+      return reply
+        .code(200)
+        .header('Content-Disposition', `attachment; filename="${result.filename}"`)
+        .header('Content-Type', result.contentType)
+        .send(result.content);
+    } catch (error) {
+      rethrowContentError(app, error);
+    }
   });
 }

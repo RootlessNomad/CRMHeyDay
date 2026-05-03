@@ -176,6 +176,10 @@ export const ContentItemDetailDtoSchema = z.object({
   current_version_id: z.string().nullable(),
   current_version: ContentVersionDtoSchema.nullable(),
   versions: z.array(ContentVersionDtoSchema),
+  idea: z.object({
+    title: z.string(),
+    pillar_label: z.string(),
+  }),
   created_by_id: z.string(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
@@ -246,10 +250,27 @@ export const ContentItemWithApprovalsDtoSchema = ContentItemDetailDtoSchema.exte
   approval_events: z.array(ContentApprovalEventDtoSchema),
 });
 
+export const ExportFormatSchema = z.enum(['md', 'plain', 'ics', 'csv']);
+
+export const ExportQuerySchema = z.object({
+  format: ExportFormatSchema,
+});
+
+export const LibraryQuerySchema = z.object({
+  q: z.string().trim().max(200).optional(),
+  channel: z.enum(['instagram', 'linkedin', 'newsletter']).optional(),
+  pillar_id: z.string().optional(),
+  status: z.enum(['draft', 'in_review', 'approved', 'exported']).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
 export type ApprovalTransitionBody = z.infer<typeof ApprovalTransitionBodySchema>;
 export type ReviewsListQuery = z.infer<typeof ReviewsListQuerySchema>;
 export type ContentApprovalEventDto = z.infer<typeof ContentApprovalEventDtoSchema>;
 export type ContentItemWithApprovalsDto = z.infer<typeof ContentItemWithApprovalsDtoSchema>;
+export type ExportFormat = z.infer<typeof ExportFormatSchema>;
+export type LibraryQuery = z.infer<typeof LibraryQuerySchema>;
 
 export function toApprovalEventDto(row: {
   id: string;

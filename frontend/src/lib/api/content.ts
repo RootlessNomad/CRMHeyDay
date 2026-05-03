@@ -1,3 +1,4 @@
+import { getAccessToken } from '../auth/store';
 import { ApiError, apiFetch } from './client';
 
 export const VERTICAL_LABELS: Record<string, string> = {
@@ -65,8 +66,12 @@ export interface IdeaListQuery {
 
 export interface ItemSummaryDto {
   id: string;
+  idea_id: string;
   channel: string;
   status: string;
+  idea_title: string;
+  pillar_label: string;
+  scheduled_for: string | null;
 }
 
 export interface CalendarItemDto {
@@ -333,3 +338,50 @@ export const GENERATED_BY_LABELS: Record<string, string> = {
   human: 'Humano',
   claude_edited_by_human: 'Claude (editado)',
 };
+
+export interface LibraryQuery {
+  q?: string;
+  channel?: string;
+  pillar_id?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface LibraryResponse {
+  total: number;
+  items: ItemSummaryDto[];
+}
+
+export async function listLibrary(query: LibraryQuery): Promise<LibraryResponse> {
+  const params = new URLSearchParams();
+  if (query.q) params.set('q', query.q);
+  if (query.channel) params.set('channel', query.channel);
+  if (query.pillar_id) params.set('pillar_id', query.pillar_id);
+  if (query.status) params.set('status', query.status);
+  if (query.limit != null) params.set('limit', String(query.limit));
+  if (query.offset != null) params.set('offset', String(query.offset));
+  const qs = params.toString();
+  return apiFetch<LibraryResponse>(`/content/library${qs ? `?${qs}` : ''}`);
+}
+
+export async function exportItemFile(
+  itemId: string,
+  format: 'md' | 'plain' | 'ics' | 'csv',
+): Promise<{ content: string; filename: string }> {
+  const token = getAccessToken();
+  const res = await fetch(
+    `${process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001'}/content/items/${itemId}/export?format=${format}`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    },
+  );
+  if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+  const content = await res.text();
+  const disposition = res.headers.get('content-disposition') ?? '';
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match?.[1] ?? `export.${format}`;
+  return { content, filename };
+}

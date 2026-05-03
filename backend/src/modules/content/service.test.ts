@@ -236,6 +236,8 @@ function buildPrisma() {
   };
 
   const buildItemDetail = (item: ItemRow) => {
+    const idea = ideas.find((candidate) => candidate.id === item.ideaId);
+    if (!idea) throw new Error(`Idea ${item.ideaId} not found`);
     const itemVersions = versions
       .filter((version) => version.itemId === item.id)
       .sort((left, right) => right.versionNumber - left.versionNumber)
@@ -248,6 +250,10 @@ function buildPrisma() {
           ? null
           : (versions.find((version) => version.id === item.currentVersionId) ?? null),
       versions: itemVersions,
+      idea: {
+        title: idea.title,
+        pillar: { labelEs: idea.pillar.labelEs },
+      },
     };
   };
 
@@ -279,6 +285,77 @@ function buildPrisma() {
         pillar: { labelEs: idea.pillar.labelEs },
       },
     };
+  };
+
+  const buildLibraryItem = (item: ItemRow) => {
+    const idea = ideas.find((candidate) => candidate.id === item.ideaId);
+    if (!idea) throw new Error(`Idea ${item.ideaId} not found`);
+
+    return {
+      ...item,
+      idea: {
+        ...idea,
+        pillar: { labelEs: idea.pillar.labelEs },
+      },
+    };
+  };
+
+  const matchesItemWhere = (
+    item: ItemRow,
+    where?: {
+      status?: string | { equals?: string; not?: string };
+      deletedAt?: null;
+      channel?: 'instagram' | 'linkedin' | 'newsletter';
+      scheduledFor?: { gte: Date; lte: Date };
+      idea?: { icpVertical?: string; pillarId?: string };
+      OR?: Array<
+        | { idea: { title: { contains: string; mode: 'insensitive' } } }
+        | { currentVersion: { body: { contains: string; mode: 'insensitive' } } }
+      >;
+    },
+  ) => {
+    if (where?.deletedAt === null && item.deletedAt !== null) return false;
+    if (where?.channel && item.channel !== where.channel) return false;
+    if (typeof where?.status === 'string' && item.status !== where.status) return false;
+    if (typeof where?.status === 'object' && where.status !== null) {
+      if (where.status.equals && item.status !== where.status.equals) return false;
+      if (where.status.not && item.status === where.status.not) return false;
+    }
+    if (where?.scheduledFor) {
+      if (!item.scheduledFor) return false;
+      if (item.scheduledFor < where.scheduledFor.gte) return false;
+      if (item.scheduledFor > where.scheduledFor.lte) return false;
+    }
+
+    const idea = ideas.find((candidate) => candidate.id === item.ideaId);
+    if (where?.idea?.icpVertical && (!idea || idea.icpVertical !== where.idea.icpVertical)) {
+      return false;
+    }
+    if (where?.idea?.pillarId && (!idea || idea.pillarId !== where.idea.pillarId)) {
+      return false;
+    }
+
+    if (where?.OR?.length) {
+      const currentVersion =
+        item.currentVersionId === null
+          ? null
+          : (versions.find((candidate) => candidate.id === item.currentVersionId) ?? null);
+      const matchesOr = where.OR.some((clause) => {
+        if ('idea' in clause) {
+          return (
+            idea?.title.toLowerCase().includes(clause.idea.title.contains.toLowerCase()) ?? false
+          );
+        }
+        return (
+          currentVersion?.body
+            .toLowerCase()
+            .includes(clause.currentVersion.body.contains.toLowerCase()) ?? false
+        );
+      });
+      if (!matchesOr) return false;
+    }
+
+    return true;
   };
 
   const prisma = {
@@ -413,56 +490,57 @@ function buildPrisma() {
           skip,
         }: {
           where?: {
-            status?: string;
+            status?: string | { equals?: string; not?: string };
             deletedAt?: null;
             channel?: 'instagram' | 'linkedin' | 'newsletter';
             scheduledFor?: { gte: Date; lte: Date };
-            idea?: { icpVertical?: string };
+            idea?: { icpVertical?: string; pillarId?: string };
+            OR?: Array<
+              | { idea: { title: { contains: string; mode: 'insensitive' } } }
+              | { currentVersion: { body: { contains: string; mode: 'insensitive' } } }
+            >;
           };
           include?: Record<string, unknown>;
           take?: number;
           skip?: number;
         }) =>
           items
-            .filter((item) => {
-              if (where?.status && item.status !== where.status) return false;
-              if (where?.channel && item.channel !== where.channel) return false;
-              if (where?.deletedAt === null && item.deletedAt !== null) return false;
-              if (where?.scheduledFor) {
-                if (!item.scheduledFor) return false;
-                if (item.scheduledFor < where.scheduledFor.gte) return false;
-                if (item.scheduledFor > where.scheduledFor.lte) return false;
-              }
-              if (where?.idea?.icpVertical) {
-                const idea = ideas.find((candidate) => candidate.id === item.ideaId);
-                if (!idea || idea.icpVertical !== where.idea.icpVertical) return false;
-              }
-              return true;
-            })
+            .filter((item) => matchesItemWhere(item, where))
             .sort((left, right) => {
               if (where?.scheduledFor) {
                 return (left.scheduledFor?.getTime() ?? 0) - (right.scheduledFor?.getTime() ?? 0);
               }
-              return left.createdAt.getTime() - right.createdAt.getTime();
+              return right.updatedAt.getTime() - left.updatedAt.getTime();
             })
             .slice(skip ?? 0, (skip ?? 0) + (take ?? items.length))
             .map((item) => {
               if (include && 'approvalEvents' in include) {
                 return buildItemWithApprovals(item);
               }
-              if (include && 'idea' in include && !('versions' in include)) {
+              if (include && 'idea' in include && 'currentVersion' in include) {
                 return buildCalendarItem(item);
+              }
+              if (include && 'idea' in include) {
+                return buildLibraryItem(item);
               }
               return buildItemWithApprovals(item);
             }),
       ),
       count: vi.fn(
-        async ({ where }: { where?: { status?: string; deletedAt?: null } }) =>
-          items.filter((item) => {
-            if (where?.status && item.status !== where.status) return false;
-            if (where?.deletedAt === null && item.deletedAt !== null) return false;
-            return true;
-          }).length,
+        async ({
+          where,
+        }: {
+          where?: {
+            status?: string | { equals?: string; not?: string };
+            deletedAt?: null;
+            channel?: 'instagram' | 'linkedin' | 'newsletter';
+            idea?: { icpVertical?: string; pillarId?: string };
+            OR?: Array<
+              | { idea: { title: { contains: string; mode: 'insensitive' } } }
+              | { currentVersion: { body: { contains: string; mode: 'insensitive' } } }
+            >;
+          };
+        }) => items.filter((item) => matchesItemWhere(item, where)).length,
       ),
       update: vi.fn(
         async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
@@ -861,6 +939,97 @@ describe('ContentService', () => {
 
   it('rejectItem item no existe -> ItemNotFoundError', async () => {
     await expect(service.rejectItem('missing', 'user_1')).rejects.toBeInstanceOf(ItemNotFoundError);
+  });
+
+  it('exportItem happy path md -> transiciona a exported y devuelve front-matter', async () => {
+    const result = await service.exportItem('item_3', 'md', 'user_7');
+
+    expect(result.filename).toBe('idea-two.md');
+    expect(result.contentType).toBe('text/markdown');
+    expect(result.content).toContain('---');
+    expect(result.content).toContain('canal: linkedin');
+    expect(prismaState.items.find((item) => item.id === 'item_3')?.status).toBe('exported');
+  });
+
+  it('exportItem happy path ics -> DTSTART usa fecha scheduled_for sin guiones', async () => {
+    const result = await service.exportItem('item_3', 'ics', 'user_7');
+
+    expect(result.content).toContain('DTSTART;VALUE=DATE:20260510');
+  });
+
+  it("exportItem happy path csv -> sanitiza celda que empieza con '='", async () => {
+    prismaState.versions.push({
+      id: 'version_99',
+      itemId: 'item_3',
+      versionNumber: 1,
+      title: '=SUM(A1:A2)',
+      body: 'Body CSV',
+      hooks: [],
+      ctas: [],
+      hashtags: [],
+      generatedBy: 'human',
+      editedById: 'user_7',
+      createdAt: new Date('2026-05-03T11:00:00.000Z'),
+    });
+    prismaState.items.find((item) => item.id === 'item_3')!.currentVersionId = 'version_99';
+
+    const result = await service.exportItem('item_3', 'csv', 'user_7');
+
+    expect(result.content).toContain('"\'=SUM(A1:A2)"');
+  });
+
+  it('exportItem item no approved/exported -> throws InvalidTransitionError', async () => {
+    await expect(service.exportItem('item_1', 'md', 'user_7')).rejects.toBeInstanceOf(
+      InvalidTransitionError,
+    );
+  });
+
+  it('exportItem ya exported -> no re-transiciona', async () => {
+    prismaState.items.find((item) => item.id === 'item_3')!.status = 'exported';
+
+    await service.exportItem('item_3', 'plain', 'user_7');
+
+    expect(prismaState.prisma.contentItem.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'item_3' },
+        data: { status: 'exported' },
+      }),
+    );
+  });
+
+  it('listLibrary sin filtros -> devuelve { total, items } paginados', async () => {
+    const result = await service.listLibrary({ limit: 2, offset: 0 });
+
+    expect(result.total).toBe(5);
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0]).toMatchObject({ id: 'item_4' });
+  });
+
+  it('listLibrary con q -> where incluye OR con contains', async () => {
+    await service.listLibrary({ q: 'body', limit: 50, offset: 0 });
+
+    expect(prismaState.prisma.contentItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            { idea: { title: { contains: 'body', mode: 'insensitive' } } },
+            { currentVersion: { body: { contains: 'body', mode: 'insensitive' } } },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("listLibrary con status=draft -> status en where es { equals: 'draft' }", async () => {
+    await service.listLibrary({ status: 'draft', limit: 50, offset: 0 });
+
+    expect(prismaState.prisma.contentItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { equals: 'draft' },
+        }),
+      }),
+    );
   });
 
   it('audit.record se llama en submitForReview', async () => {
