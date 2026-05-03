@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import {
+  ConflictError,
+  CreateVersionBodySchema,
   ContentDailyLimitError,
   DraftRequestSchema,
   IdeaCreateBodySchema,
@@ -9,6 +11,7 @@ import {
   IdeaListQuerySchema,
   IdeaNotFoundError,
   IdeaUpdateSchema,
+  ItemNotFoundError,
   contentService,
 } from '../../modules/content/index.js';
 
@@ -16,8 +19,14 @@ const IdeaIdParamsSchema = z.object({
   id: z.string().min(1),
 });
 
+const ItemIdParamsSchema = z.object({
+  id: z.string().min(1),
+});
+
 function rethrowContentError(app: FastifyInstance, error: unknown): never {
   if (error instanceof IdeaNotFoundError) throw app.httpErrors.notFound(error.message);
+  if (error instanceof ItemNotFoundError) throw app.httpErrors.notFound(error.message);
+  if (error instanceof ConflictError) throw app.httpErrors.conflict(error.message);
   if (error instanceof ContentDailyLimitError) {
     const err = app.httpErrors.tooManyRequests(error.message);
     throw err;
@@ -98,6 +107,29 @@ export async function registerContentRoutes(app: FastifyInstance): Promise<void>
     try {
       const result = await contentService.requestDraftsForIdea(id, body.channels, actorUserId);
       return reply.code(202).send({ items: result.items, job_ids: result.jobIds });
+    } catch (error) {
+      rethrowContentError(app, error);
+    }
+  });
+
+  app.get('/content/items/:id', authGuard, async (request, reply) => {
+    const { id } = ItemIdParamsSchema.parse(request.params);
+    try {
+      const item = await contentService.getItemById(id);
+      return reply.code(200).send(item);
+    } catch (error) {
+      rethrowContentError(app, error);
+    }
+  });
+
+  app.post('/content/items/:id/versions', authGuard, async (request, reply) => {
+    const { id } = ItemIdParamsSchema.parse(request.params);
+    const body = CreateVersionBodySchema.parse(request.body);
+    const actorUserId = request.authUser?.id;
+    if (!actorUserId) throw app.httpErrors.unauthorized();
+    try {
+      const version = await contentService.createVersion(id, body, actorUserId);
+      return reply.code(201).send(version);
     } catch (error) {
       rethrowContentError(app, error);
     }

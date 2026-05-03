@@ -169,3 +169,67 @@ export function isContentDailyLimit(error: unknown): boolean {
     error instanceof ApiError && (error.code === 'CONTENT_DAILY_LIMIT' || error.status === 429)
   );
 }
+
+export interface ContentVersionDto {
+  id: string;
+  item_id: string;
+  version_number: number;
+  title: string | null;
+  body: string;
+  hooks: string[];
+  ctas: string[];
+  hashtags: string[];
+  generated_by: 'claude' | 'human' | 'claude_edited_by_human';
+  edited_by_id: string;
+  created_at: string;
+}
+
+export interface ContentItemDetailDto {
+  id: string;
+  idea_id: string;
+  channel: 'instagram' | 'linkedin' | 'newsletter';
+  status: 'draft' | 'in_review' | 'approved' | 'exported' | 'archived';
+  scheduled_for: string | null;
+  current_version_id: string | null;
+  current_version: ContentVersionDto | null;
+  versions: ContentVersionDto[];
+  created_by_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateVersionInput {
+  body: string;
+  title?: string;
+  hooks?: string[];
+  ctas?: string[];
+  hashtags?: string[];
+}
+
+export async function getContentItem(id: string): Promise<ContentItemDetailDto> {
+  return apiFetch<ContentItemDetailDto>(`/content/items/${id}`);
+}
+
+export async function createVersion(
+  itemId: string,
+  input: CreateVersionInput,
+): Promise<ContentVersionDto> {
+  return apiFetch<ContentVersionDto>(`/content/items/${itemId}/versions`, {
+    method: 'POST',
+    json: input,
+  });
+}
+
+export const ITEM_STATUS_LABELS: Record<string, string> = {
+  draft: 'Borrador',
+  in_review: 'En revisión',
+  approved: 'Aprobado',
+  exported: 'Exportado',
+  archived: 'Archivado',
+};
+
+export const GENERATED_BY_LABELS: Record<string, string> = {
+  claude: 'Claude',
+  human: 'Humano',
+  claude_edited_by_human: 'Claude (editado)',
+};

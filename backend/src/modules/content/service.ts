@@ -5,6 +5,9 @@ import { prisma as defaultPrisma } from '../../core/prisma/client.js';
 import type { PayloadForQueue, QueueName } from '../../core/queue/types.js';
 import { auditService, type AuditService } from '../audit/index.js';
 import type {
+  ContentItemDetailDto,
+  ContentVersionDto,
+  CreateVersionBody,
   DraftRequestInput,
   IdeaCreateManualInput,
   IdeaDto,
@@ -12,7 +15,7 @@ import type {
   IdeaUpdateInput,
   ItemSummaryDto,
 } from './schemas.js';
-import { toIdeaDto } from './schemas.js';
+import { toIdeaDto, toVersionDto } from './schemas.js';
 
 interface EnqueueLike {
   <N extends QueueName>(name: N, payload: PayloadForQueue[N]): Promise<{ jobId: string }>;
@@ -29,6 +32,20 @@ export class ContentDailyLimitError extends Error {
   constructor() {
     super('Daily content generation limit reached');
     this.name = 'ContentDailyLimitError';
+  }
+}
+
+export class ItemNotFoundError extends Error {
+  constructor(id: string) {
+    super(`ContentItem ${id} not found`);
+    this.name = 'ItemNotFoundError';
+  }
+}
+
+export class ConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConflictError';
   }
 }
 
@@ -183,6 +200,34 @@ export class ContentService {
     return toIdeaDto(row);
   }
 
+  async getItemById(id: string): Promise<ContentItemDetailDto> {
+    const row = await this.db.contentItem.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        currentVersion: true,
+        versions: {
+          orderBy: { versionNumber: 'desc' },
+          take: 5,
+        },
+      },
+    });
+    if (!row) throw new ItemNotFoundError(id);
+
+    return {
+      id: row.id,
+      idea_id: row.ideaId,
+      channel: row.channel,
+      status: row.status,
+      scheduled_for: row.scheduledFor?.toISOString().slice(0, 10) ?? null,
+      current_version_id: row.currentVersionId,
+      current_version: row.currentVersion ? toVersionDto(row.currentVersion) : null,
+      versions: row.versions.map(toVersionDto),
+      created_by_id: row.createdById,
+      created_at: row.createdAt.toISOString(),
+      updated_at: row.updatedAt.toISOString(),
+    };
+  }
+
   async updateIdea(id: string, input: IdeaUpdateInput, actorUserId: string): Promise<IdeaDto> {
     const existing = await this.db.contentIdea.findUnique({ where: { id } });
     if (!existing) throw new IdeaNotFoundError(id);
@@ -267,6 +312,56 @@ export class ContentService {
     });
 
     return { items, jobIds };
+  }
+
+  async createVersion(
+    itemId: string,
+    body: CreateVersionBody,
+    actorUserId: string,
+  ): Promise<ContentVersionDto> {
+    const item = await this.db.contentItem.findFirst({
+      where: { id: itemId, deletedAt: null },
+    });
+    if (!item) throw new ItemNotFoundError(itemId);
+
+    const count = await this.db.contentVersion.count({ where: { itemId } });
+    const newVersion = await this.db.$transaction(async (tx) => {
+      const recount = await tx.contentVersion.count({ where: { itemId } });
+      if (recount !== count) {
+        throw new ConflictError('Version conflict: please refresh');
+      }
+
+      const created = await tx.contentVersion.create({
+        data: {
+          itemId,
+          versionNumber: count + 1,
+          body: body.body,
+          title: body.title ?? null,
+          hooks: body.hooks,
+          ctas: body.ctas,
+          hashtags: body.hashtags,
+          generatedBy: 'human',
+          editedById: actorUserId,
+        },
+      });
+
+      await tx.contentItem.update({
+        where: { id: itemId },
+        data: { currentVersionId: created.id },
+      });
+
+      return created;
+    });
+
+    await this.audit.record({
+      actorUserId,
+      action: 'content.version.created',
+      entityType: 'content_version',
+      entityId: newVersion.id,
+      metadata: { itemId, versionNumber: count + 1 },
+    });
+
+    return toVersionDto(newVersion);
   }
 }
 

@@ -125,3 +125,73 @@ export function toIdeaDto(row: IdeaRow): IdeaDto {
     items_count: row._count.items,
   };
 }
+
+export const ContentVersionDtoSchema = z.object({
+  id: z.string(),
+  item_id: z.string(),
+  version_number: z.number().int().positive(),
+  title: z.string().nullable(),
+  body: z.string(),
+  hooks: z.array(z.string()),
+  ctas: z.array(z.string()),
+  hashtags: z.array(z.string()),
+  generated_by: z.enum(['claude', 'human', 'claude_edited_by_human']),
+  edited_by_id: z.string(),
+  created_at: z.string().datetime(),
+});
+
+export const ContentItemDetailDtoSchema = z.object({
+  id: z.string(),
+  idea_id: z.string(),
+  channel: z.enum(['instagram', 'linkedin', 'newsletter']),
+  status: z.enum(['draft', 'in_review', 'approved', 'exported', 'archived']),
+  scheduled_for: z.string().date().nullable(),
+  current_version_id: z.string().nullable(),
+  current_version: ContentVersionDtoSchema.nullable(),
+  versions: z.array(ContentVersionDtoSchema),
+  created_by_id: z.string(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+
+export const CreateVersionBodySchema = z.object({
+  body: z.string().trim().min(1).max(50000),
+  title: z.string().trim().min(1).max(500).optional(),
+  hooks: z.array(z.string().trim().min(1)).max(10).default([]),
+  ctas: z.array(z.string().trim().min(1)).max(10).default([]),
+  hashtags: z.array(z.string().trim().min(1)).max(30).default([]),
+});
+
+export type ContentVersionDto = z.infer<typeof ContentVersionDtoSchema>;
+export type ContentItemDetailDto = z.infer<typeof ContentItemDetailDtoSchema>;
+export type CreateVersionBody = z.infer<typeof CreateVersionBodySchema>;
+
+type VersionRow = {
+  id: string;
+  itemId: string;
+  versionNumber: number;
+  title: string | null;
+  body: string;
+  hooks: string[];
+  ctas: string[];
+  hashtags: string[];
+  generatedBy: 'claude' | 'human' | 'claude_edited_by_human';
+  editedById: string;
+  createdAt: Date;
+};
+
+export function toVersionDto(row: VersionRow): ContentVersionDto {
+  return {
+    id: row.id,
+    item_id: row.itemId,
+    version_number: row.versionNumber,
+    title: row.title ?? null,
+    body: row.body,
+    hooks: row.hooks,
+    ctas: row.ctas,
+    hashtags: row.hashtags,
+    generated_by: row.generatedBy,
+    edited_by_id: row.editedById,
+    created_at: row.createdAt.toISOString(),
+  };
+}
