@@ -11,9 +11,7 @@
     "incremental": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "@heyday/shared": ["../shared/src/index.ts"],
-      "@heyday/shared/*": ["../shared/src/*"]
+      "@/*": ["./src/*"]
     },
     "types": ["node"],
     "plugins": [{ "name": "next" }]
