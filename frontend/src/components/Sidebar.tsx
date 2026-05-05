@@ -8,6 +8,7 @@
 import {
   Building2,
   Calendar,
+  CalendarDays,
   CreditCard,
   FileCheck,
   FileText,
@@ -56,6 +57,7 @@ const SECTIONS: NavSection[] = [
       { href: '/contacts', label: 'Contactos', icon: Users },
       { href: '/leads', label: 'Leads', icon: ListChecks },
       { href: '/activities', label: 'Actividades', icon: PhoneCall },
+      { href: '/calendar', label: 'Calendario', icon: CalendarDays },
     ],
   },
   {
