@@ -355,6 +355,99 @@
 
 ---
 
+## M6 — Post-delivery (iteración 1)
+
+Añadidos tras delivery por petición del usuario. No afectan el alcance original.
+
+### UJ-28: Calendario personal y de equipo
+
+- **Description**: agenda transversal de reuniones, milestones y fechas importantes con dos niveles de visibilidad: eventos `personal` (solo el owner los ve) y eventos `general` (visibles a todos).
+- **Backend**:
+  - Nueva entidad `CalendarEvent` con campos `id, owner_id (nullable cuando general), created_by, title, description, location, starts_at, ends_at, all_day, visibility ('personal'|'general'), related_entity_type ('lead'|'company'|'contact'|null), related_entity_id, color, created_at, updated_at, deleted_at`.
+  - Endpoints: `GET /calendar/events?from=&to=&visibility=`, `POST /calendar/events`, `PATCH /calendar/events/:id`, `DELETE /calendar/events/:id`.
+  - **RBAC server-side** en service: `list` devuelve eventos donde `visibility='general' OR owner_id=currentUser`. `update/delete` requiere ser owner (personales) o admin (generales). Nunca confiar en filtros del cliente.
+- **Frontend**:
+  - Página `/calendar` con vista mensual (default) + toggle a vista semanal.
+  - Toggle de filtro: "Mis eventos" / "Generales" / "Ambos" (default).
+  - Dialog crear/editar evento: título, fechas (con all-day toggle), ubicación, descripción, visibilidad (personal/general), link opcional a lead/empresa/contacto.
+  - Click en evento → ver detalle, editar (si owner o general) o borrar.
+  - Entrada en sidebar.
+- **Acceptance**:
+  - Alex crea evento personal "Reunión con Acme" → solo Alex lo ve.
+  - Alba crea evento general "Standup semanal" → Alex y Alba lo ven.
+  - Alex no puede ver ni editar el evento personal de Alba (verificado server-side).
+  - Vista mensual navegable con ◀/▶ y "Hoy".
+- **Security**: RBAC en service, validación de fechas (`ends_at >= starts_at`), XSS escape en descripción/ubicación.
+- **Tests**: service (RBAC list + update/delete), routes (200/403/404), frontend (render mensual, dialog crear, toggle visibilidad).
+
+### UJ-29a: Bandeja de correo — vault + lectura
+
+- **Description**: cada usuario configura sus credenciales IMAP/SMTP de Hostinger desde su perfil. Lista paginada de mensajes (INBOX por defecto, navegable a otras carpetas). Lectura individual.
+- **Backend**:
+  - Nueva entidad `EmailAccount`: `id, owner_id, email_address, display_name, imap_host, imap_port, smtp_host, smtp_port, credential_id (FK a Credential vault, AES-256-GCM), signature_text, signature_html, last_sync_at, created_at, updated_at`.
+  - Defaults Hostinger preconfigurados: `imap.hostinger.com:993`, `smtp.hostinger.com:465`.
+  - Tabla pivote `EmailAccountShare(email_account_id, user_id)` para que `hello@estudioheyday.com` sea accesible por Alex y Alba.
+  - Endpoints:
+    - `POST /mail/accounts` — registrar cuenta (test conexión IMAP login antes de guardar; si falla, no persiste).
+    - `GET /mail/accounts` — lista cuentas accesibles para el usuario actual (propias + compartidas).
+    - `PATCH /mail/accounts/:id`, `DELETE /mail/accounts/:id`.
+    - `GET /mail/accounts/:id/folders` — lista de mailboxes IMAP.
+    - `GET /mail/accounts/:id/messages?folder=INBOX&page=1&page_size=50` — lista paginada (UID + flags + envelope).
+    - `GET /mail/accounts/:id/messages/:uid?folder=INBOX` — mensaje completo (HTML sanitizado, texto, headers).
+    - `POST /mail/accounts/:id/messages/:uid/flags` — marcar leído/no leído/destacado.
+  - Cliente IMAP: `imapflow`. Pool de conexiones por cuenta con TTL.
+  - Cliente SMTP: `nodemailer`.
+- **Frontend**:
+  - Página `/mail` con sidebar (cuentas + carpetas) + lista de mensajes + panel de lectura.
+  - En `/profile` o `/settings`: sección "Cuentas de correo" con form (email, password, firma).
+- **Acceptance**: Alex añade `alejandro@estudioheyday.com`, conecta y ve INBOX. Alba ve `hello@estudioheyday.com` (compartido) y `alba@estudioheyday.com`. Click en mensaje → render HTML sanitizado.
+- **Security**: passwords cifrados Level 3 vault. HTML sanitizado (sin `<script>`, sin `javascript:`, sin remote images por default). RBAC estricto. Audit log en `POST /mail/accounts`. Rate limit por usuario.
+- **Tests**: service (vault + share), routes (RBAC), frontend (lista + lectura, mocked).
+
+### UJ-29b: Compose, reply, forward + adjuntos
+
+- **Description**: redactar nuevos emails, responder, responder a todos, reenviar. Subir y descargar adjuntos.
+- **Backend**:
+  - `POST /mail/accounts/:id/send` — multipart con `to, cc, bcc, subject, body_text, body_html, in_reply_to (uid), attachments`.
+  - `GET /mail/accounts/:id/messages/:uid/attachments/:partId` — descarga adjunto (stream).
+  - Limite: 25MB total por mensaje.
+- **Frontend**:
+  - Compose modal con `to/cc/bcc` chips, subject, editor (Tiptap reusado de UJ-24), attachments dropzone.
+  - Botones reply/reply-all/forward en panel de lectura. Reply prefiltra `to`/`subject` y cita el mensaje original.
+  - Firma del usuario insertada al final.
+- **Acceptance**: Alex envía email a Alba desde `alejandro@`, Alba lo recibe. Reply mantiene threading. Adjunto PDF se sube y descarga íntegro.
+- **Security**: validación tamaño y MIME de adjuntos. No inyección de headers vía `\r\n`. Audit log de cada envío.
+- **Tests**: service send (mocked SMTP), attachment streaming.
+
+### UJ-29c: Búsqueda + vínculo CRM + borradores locales
+
+- **Description**: buscar mensajes server-side (IMAP SEARCH). Detectar emails de contactos del CRM y permitir convertir un email en activity. Borradores en localStorage.
+- **Backend**:
+  - `GET /mail/accounts/:id/search?q=&folder=&from=&to=&since=&before=` — proxy a IMAP SEARCH.
+  - `POST /mail/accounts/:id/messages/:uid/to-activity` — crea Activity tipo `email` linkeada al lead/company/contact que coincida con remitente.
+- **Frontend**:
+  - Buscador con debounce 400ms.
+  - Chip "→ Empresa Acme" si remitente match. Botón "Crear activity desde este email".
+  - Borrador local: `localStorage` por cuenta cada 2s.
+- **Acceptance**: buscar "factura" devuelve mensajes con esa palabra. Email de `juan@acme.com` muestra chip si "Acme" existe en CRM. Cerrar y reabrir compose recupera borrador.
+- **Security**: query SEARCH parametrizada. Match contacto solo en buzones del usuario.
+- **Tests**: service search + match contact, frontend draft persistence.
+
+### IT-12: Deploy a EasyPanel — VPS producción
+
+- **Description**: desplegar el CRM en VPS EasyPanel `46.202.131.13` con dominio `crm.estudioheyday.com`.
+- **Trabajo**:
+  - Validar build de los 3 Dockerfiles (`backend`, `worker`, `frontend`) en target `prod`.
+  - `deployment/easypanel/project.yml` con 5 servicios + healthchecks + volúmenes persistentes (db, redis, backend uploads).
+  - Hardening producción: `cookie.secure=true`, `cookie.sameSite=strict`, CORS lockdown a `https://crm.estudioheyday.com`, `APP_ENV=production`, logs JSON, rate-limit estricto.
+  - Job one-shot migraciones (`pnpm db:migrate:deploy`) y seed base (`pnpm seed`, sin `seed:demo`).
+  - Cron diario `pg_dump` → volumen persistente, retención 7 días.
+  - Runbook paso-a-paso en `deployment/easypanel/README.md` (DNS, secrets, deploy, smoke checklist).
+- **Acceptance**: login en `https://crm.estudioheyday.com` con Alex y Alba. Crear empresa/contacto/lead/evento de calendario y configurar email account funcionan. `/health` verde. Backup verificable.
+- **Security**: secrets via EasyPanel env (Level 2). TLS forzado. Logs sin PII. Rate-limit habilitado.
+
+---
+
 ## Orden de ejecución final
 
 1. **M0 — Foundation**: IT-01 → IT-02 → IT-03 → IT-04 → IT-05 → IT-09 → IT-10 → IT-06 → IT-07 → IT-08 → IT-11
@@ -363,6 +456,7 @@
 4. **M3 — Admin Panel**: UJ-11 → UJ-12 → UJ-13 → UJ-14 → UJ-15
 5. **M4 — Lead Intelligence**: UJ-16 → UJ-17 → UJ-18 → UJ-19 → UJ-20 → UJ-21
 6. **M5 — Content Engine**: UJ-22 → UJ-23 → UJ-24 → UJ-25 → UJ-26 → UJ-27
+7. **M6 — Post-delivery**: UJ-28 → UJ-29a → UJ-29b → UJ-29c → IT-12
 
 Tras cada milestone: `/review`. Antes de delivery: audit holístico de seguridad + seed demo + verificación de golden paths.
 

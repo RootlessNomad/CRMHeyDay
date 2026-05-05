@@ -246,6 +246,78 @@ Token validado contra credential `n8n_webhook_secret`. Acepta payloads de n8n pa
 
 ---
 
+## Calendar (UJ-28)
+
+### GET /calendar/events?from=ISO&to=ISO&visibility=personal|general|both
+
+Response 200: `{ data: CalendarEventDto[] }`. Aplicar RBAC server-side (no confiar en `visibility` del query): `WHERE visibility='general' OR owner_id=currentUser`. El query param `visibility` solo filtra dentro del set permitido.
+
+### POST /calendar/events
+
+Body: `{ title, description?, location?, starts_at, ends_at, all_day, visibility, related_entity_type?, related_entity_id?, color? }`. Si `visibility='personal'`, `owner_id` se asigna automáticamente al usuario autenticado.
+
+### PATCH /calendar/events/:id
+
+Solo owner (personal) o admin (general). Rechaza con `FORBIDDEN` si no.
+
+### DELETE /calendar/events/:id
+
+Soft delete. Mismas reglas RBAC que PATCH.
+
+---
+
+## Mail (UJ-29a/b/c)
+
+### POST /mail/accounts
+
+Body: `{ email_address, password, display_name?, imap_host?, imap_port?, smtp_host?, smtp_port?, signature_text?, signature_html? }`. Hace login IMAP de prueba antes de persistir; si falla devuelve `INTEGRATION_UNAVAILABLE` y no guarda nada. Password cifrada AES-256-GCM en `Credential` (Level 3).
+
+### GET /mail/accounts
+
+Lista cuentas accesibles para el usuario (propias + compartidas vía `EmailAccountShare`). No expone password.
+
+### PATCH /mail/accounts/:id
+
+Actualiza display, firma o password. Si cambia password, re-test IMAP login.
+
+### DELETE /mail/accounts/:id
+
+Solo owner. Cascade borra `EmailAccountShare`.
+
+### GET /mail/accounts/:id/folders
+
+Lista mailboxes IMAP (INBOX, Sent, Drafts, Trash, custom).
+
+### GET /mail/accounts/:id/messages?folder=INBOX&page=1&page_size=50
+
+Lista paginada con UID + flags + envelope (from, to, subject, date, has_attachments).
+
+### GET /mail/accounts/:id/messages/:uid?folder=INBOX
+
+Mensaje completo. `body_html` sanitizado server-side (sin `<script>`, sin `javascript:`, remote images bloqueadas por default; opción "load images").
+
+### POST /mail/accounts/:id/messages/:uid/flags
+
+Body: `{ folder, seen?, flagged?, deleted? }`.
+
+### POST /mail/accounts/:id/send (UJ-29b)
+
+Multipart. Campos: `to[], cc[], bcc[], subject, body_text, body_html, in_reply_to (uid)?, attachments[]`. Limite 25MB total. Audit log.
+
+### GET /mail/accounts/:id/messages/:uid/attachments/:partId
+
+Stream del adjunto con content-type del part.
+
+### GET /mail/accounts/:id/search?q=&folder=&from=&to=&since=&before= (UJ-29c)
+
+Proxy a IMAP SEARCH. Devuelve UIDs paginados.
+
+### POST /mail/accounts/:id/messages/:uid/to-activity (UJ-29c)
+
+Crea Activity tipo `email` linkeada al lead/company/contact que coincida con remitente. Si no hay match, devuelve `NOT_FOUND` con sugerencia de crear contacto.
+
+---
+
 ## Códigos de error comunes
 
 - `AUTH_INVALID_CREDENTIALS` (401)

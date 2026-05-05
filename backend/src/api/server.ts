@@ -29,6 +29,7 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
 import { registerActivitiesRoutes } from './routes/activities.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerCalendarRoutes } from './routes/calendar.js';
 import { registerCompaniesRoutes } from './routes/companies.js';
 import { registerContentRoutes } from './routes/content.js';
 import { registerContactsRoutes } from './routes/contacts.js';
@@ -115,6 +116,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
 
   // ---- Rutas
   await registerActivitiesRoutes(app);
+  await registerCalendarRoutes(app);
   await registerAdminRoutes(app);
   await registerAuthRoutes(app);
   await registerCompaniesRoutes(app);

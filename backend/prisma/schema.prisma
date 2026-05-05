@@ -98,6 +98,17 @@ enum ActivityEntityType {
   lead
 }
 
+enum CalendarVisibility {
+  personal
+  general
+}
+
+enum CalendarRelatedEntityType {
+  lead
+  company
+  contact
+}
+
 enum EnrichmentRunStatus {
   queued
   running
@@ -210,6 +221,8 @@ model User {
   ownedLeads              Lead[]                    @relation("LeadOwner")
   ownedActivities         Activity[]                @relation("ActivityOwner")
   createdActivities       Activity[]                @relation("ActivityCreatedBy")
+  calendarEventsOwned     CalendarEvent[]           @relation("CalendarEventOwner")
+  calendarEventsCreated   CalendarEvent[]           @relation("CalendarEventCreatedBy")
   triggeredEnrichmentRuns EnrichmentRun[]
   verifiedPainPoints      PainPoint[]
   lastGeneratedOutbound   OutboundPrep[]
@@ -436,6 +449,33 @@ model Activity {
   @@index([ownerId])
   @@index([dueAt])
   @@map("activities")
+}
+
+model CalendarEvent {
+  id                String                    @id @default(cuid())
+  ownerId           String?                   @map("owner_id")
+  createdById       String                    @map("created_by_id")
+  title             String
+  description       String?
+  location          String?
+  startsAt          DateTime                  @map("starts_at") @db.Timestamptz(6)
+  endsAt            DateTime                  @map("ends_at") @db.Timestamptz(6)
+  allDay            Boolean                   @default(false) @map("all_day")
+  visibility        CalendarVisibility
+  relatedEntityType CalendarRelatedEntityType? @map("related_entity_type")
+  relatedEntityId   String?                   @map("related_entity_id")
+  color             String?
+  createdAt         DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt         DateTime?                 @map("deleted_at") @db.Timestamptz(6)
+
+  owner     User? @relation("CalendarEventOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  createdBy User  @relation("CalendarEventCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([ownerId, startsAt])
+  @@index([visibility, startsAt])
+  @@index([relatedEntityType, relatedEntityId])
+  @@map("calendar_events")
 }
 
 // ============================================================

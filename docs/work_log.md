@@ -1085,3 +1085,31 @@ Auditoría final pre-delivery cubriendo todos los milestones (M0–M5).
 ### Veredicto
 
 **APTO PARA DELIVERY** — Sin issues críticos de seguridad. Riesgos residuales documentados y acotados a v1.
+
+---
+
+## M6 — Iteración post-delivery (2026-05-05)
+
+Petición del usuario tras delivery: (a) CRM en blanco para clientes reales, (b) calendario personal+general, (c) gestión de correo corporativo Hostinger, (d) deploy a EasyPanel VPS `46.202.131.13` con dominio `crm.estudioheyday.com`. Alcance bloqueado en una pasada: UJ-28, UJ-29a/b/c, IT-12.
+
+### UJ-28 backend — Calendario personal y de equipo
+
+**Diseño aprobado:** dos niveles de visibilidad (`personal` solo el owner; `general` todos). Vínculo opcional a `lead/company/contact`.
+
+**Implementación (Codex pase 1):**
+
+- Migración `add_calendar_events` con 2 enums (`CalendarVisibility`, `CalendarRelatedEntityType`) + tabla `calendar_events` con índices compuestos.
+- Módulo `backend/src/modules/calendar/` siguiendo patrón `activities`: `service.ts`, `schemas.ts` (Zod superRefine para rango de fechas y emparejamiento `related_entity_*`), `service.test.ts` (in-memory FakeDb).
+- Routes en `backend/src/api/routes/calendar.ts` registradas en `server.ts`.
+- RBAC server-side: `list` aplica `OR(visibility='general', ownerId=currentUser)`. `update/delete` exige owner (personal) o admin (general). Conversión personal→general también requiere admin (defense in depth).
+- Audit log en create/update/delete con metadata diff.
+- Soft delete (`deleted_at`).
+
+**Verificación independiente:** typecheck ✓, lint ✓, 474 tests ✓ (+17 nuevos vs baseline 457).
+
+**Security checklist UJ-28 backend:** ✅ todo verde. Sin secretos hardcoded, validación Zod, requireAuth global, RBAC server-side estricto, queries Prisma parametrizadas, DTO sin leaks.
+
+**Deuda específica UJ-28:**
+
+- Codex generó la migración manualmente porque Postgres no estaba accesible en `localhost:5432`. Validar con `prisma migrate dev` cuando docker compose esté arriba (idealmente en el reset previo al deploy IT-12).
+- Frontend pendiente — Codex pase 2.

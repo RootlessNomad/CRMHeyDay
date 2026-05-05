@@ -402,6 +402,58 @@ PostgreSQL 16 + Prisma ORM. IDs en `cuid()` salvo `audit_log` que usa `bigserial
 
 ---
 
+## M6 — Calendario y correo (post-delivery)
+
+### CalendarEvent (UJ-28)
+
+- id: uuid
+- owner_id: uuid? FK User — null cuando `visibility='general'` y nadie es dueño exclusivo
+- created_by: uuid FK User
+- title: text not null
+- description: text?
+- location: text?
+- starts_at: timestamptz not null
+- ends_at: timestamptz not null (constraint: `ends_at >= starts_at`)
+- all_day: boolean default false
+- visibility: enum(`personal`, `general`)
+- related_entity_type: enum(`lead`, `company`, `contact`)?
+- related_entity_id: uuid?
+- color: text? (hex `#RRGGBB`, opcional para tag visual)
+- created_at, updated_at, deleted_at: timestamptz
+
+Índices: `(owner_id, starts_at)`, `(visibility, starts_at)`, `(related_entity_type, related_entity_id)`.
+
+RBAC: `list` aplica `WHERE visibility='general' OR owner_id = currentUser`. `update/delete` requiere ownership o admin.
+
+### EmailAccount (UJ-29a)
+
+- id: uuid
+- owner_id: uuid FK User (dueño principal)
+- email_address: text not null unique (case-insensitive)
+- display_name: text?
+- imap_host: text not null (default `imap.hostinger.com`)
+- imap_port: int not null (default 993)
+- smtp_host: text not null (default `smtp.hostinger.com`)
+- smtp_port: int not null (default 465)
+- credential_id: uuid FK Credential — apunta al secret cifrado AES-256-GCM con la password IMAP/SMTP
+- signature_text: text?
+- signature_html: text?
+- last_sync_at: timestamptz?
+- created_at, updated_at: timestamptz
+
+### EmailAccountShare (UJ-29a)
+
+Permite que un buzón sea accesible por más de un usuario (ej. `hello@estudioheyday.com` lo ven Alex y Alba).
+
+- email_account_id: uuid FK EmailAccount (cascade delete)
+- user_id: uuid FK User
+- created_at: timestamptz
+- PK compuesta: `(email_account_id, user_id)`.
+
+Lectura/uso del buzón requiere `email_account.owner_id = currentUser OR EXISTS share`.
+
+---
+
 ## Diagrama de relaciones (ASCII)
 
 ```
