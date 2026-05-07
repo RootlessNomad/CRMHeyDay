@@ -2,13 +2,15 @@ import type { EmailAccount, EmailAccountShare, PrismaClient } from '@prisma/clie
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AuditEntry } from '../audit/service.js';
-import type { CreateEmailAccountInput } from './schemas.js';
+import { SendEmailInputSchema, type CreateEmailAccountInput } from './schemas.js';
 import {
   EmailAccountService,
   ForbiddenError,
   ImapConnectionError,
   NotFoundError,
+  SmtpConnectionError,
   imapService,
+  sanitizeHeaderValue,
 } from './service.js';
 
 vi.mock('imapflow', () => ({ ImapFlow: vi.fn() }));
@@ -407,5 +409,68 @@ describe('EmailAccountService', () => {
     await service.delete('acct_1', 'user_1');
 
     expect(db.emailAccounts.has('acct_1')).toBe(false);
+  });
+});
+
+describe('SendEmailInputSchema', () => {
+  it('rejects missing to', () => {
+    expect(() => SendEmailInputSchema.parse({ subject: 'Hi' })).toThrow();
+  });
+
+  it('rejects to with more than 50 entries', () => {
+    expect(() =>
+      SendEmailInputSchema.parse({
+        to: Array.from({ length: 51 }, (_, index) => `user${index}@example.com`),
+        subject: 'Hi',
+      }),
+    ).toThrow();
+  });
+
+  it('rejects subject longer than 998 chars', () => {
+    expect(() =>
+      SendEmailInputSchema.parse({
+        to: ['a@b.com'],
+        subject: 'a'.repeat(999),
+      }),
+    ).toThrow();
+  });
+
+  it('rejects attachments with more than 10 items', () => {
+    expect(() =>
+      SendEmailInputSchema.parse({
+        to: ['a@b.com'],
+        subject: 'Hi',
+        attachments: Array.from({ length: 11 }, (_, index) => ({
+          filename: `file-${index}.txt`,
+          content_type: 'text/plain',
+          data: 'ZGF0YQ==',
+        })),
+      }),
+    ).toThrow();
+  });
+
+  it('accepts a valid minimal payload', () => {
+    expect(
+      SendEmailInputSchema.parse({
+        to: ['a@b.com'],
+        subject: 'Hi',
+      }),
+    ).toEqual({
+      to: ['a@b.com'],
+      cc: [],
+      bcc: [],
+      subject: 'Hi',
+      attachments: [],
+    });
+  });
+});
+
+describe('SMTP helpers', () => {
+  it('sanitizeHeaderValue strips carriage returns and newlines', () => {
+    expect(sanitizeHeaderValue('Hello\rWorld\nAgain\r\nDone')).toBe('HelloWorldAgainDone');
+  });
+
+  it('SmtpConnectionError has the expected name', () => {
+    expect(new SmtpConnectionError('failed').name).toBe('SmtpConnectionError');
   });
 });

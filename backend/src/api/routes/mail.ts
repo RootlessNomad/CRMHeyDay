@@ -9,11 +9,15 @@ import {
   ImapConnectionError,
   ListMessagesQuerySchema,
   NotFoundError,
+  SendEmailInputSchema,
+  SmtpConnectionError,
   SetFlagsInputSchema,
   UpdateEmailAccountInputSchema,
   emailAccountService,
   imapService,
+  smtpService,
 } from '../../modules/mail/index.js';
+import { auditService } from '../../modules/audit/service.js';
 
 const IdParamsSchema = z.object({ id: z.string().min(1) });
 const MessageParamsSchema = z.object({
@@ -48,6 +52,18 @@ function sendMailError(
       error: {
         code: ERROR_CODES.INTEGRATION_UNAVAILABLE,
         message: error instanceof Error ? error.message : 'Servicio IMAP no disponible',
+      },
+    });
+  }
+
+  if (
+    error instanceof SmtpConnectionError ||
+    (error instanceof Error && error.name === 'SmtpConnectionError')
+  ) {
+    return reply.code(502).send({
+      error: {
+        code: ERROR_CODES.INTEGRATION_UNAVAILABLE,
+        message: error instanceof Error ? error.message : 'Servicio SMTP no disponible',
       },
     });
   }
@@ -173,6 +189,64 @@ export async function registerMailRoutes(app: FastifyInstance): Promise<void> {
       return sendMailError(app, reply, error);
     }
   });
+
+  app.post(
+    '/mail/accounts/:id/send',
+    {
+      preHandler: [app.requireAuth],
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: '1 minute',
+          hook: 'preHandler',
+          keyGenerator: (request: { authUser?: { id?: string }; ip: string }) =>
+            request.authUser?.id ?? request.ip,
+        },
+      },
+    },
+    async (request, reply) => {
+      const authUser = request.authUser;
+      if (!authUser) throw app.httpErrors.unauthorized();
+
+      const { id } = IdParamsSchema.parse(request.params);
+      const body = SendEmailInputSchema.parse(request.body);
+
+      const totalAttachmentBytes = (body.attachments ?? []).reduce(
+        (sum, att) => sum + Buffer.byteLength(att.data, 'base64'),
+        0,
+      );
+      if (totalAttachmentBytes > 25 * 1024 * 1024) {
+        return reply.code(422).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'El tamaño total de los adjuntos no puede superar los 25 MB.',
+          },
+        });
+      }
+
+      try {
+        const { account, password } = await emailAccountService.getAccessible(id, authUser.id);
+        const result = await smtpService.sendEmail(account, password, body);
+
+        await auditService.record({
+          action: 'email.sent',
+          actorUserId: authUser.id,
+          entityType: 'email_account',
+          entityId: id,
+          metadata: {
+            to_count: body.to.length,
+            subject_length: body.subject.length,
+            has_attachments: (body.attachments ?? []).length > 0,
+            message_id: result.messageId,
+          },
+        });
+
+        return reply.code(200).send({ message_id: result.messageId });
+      } catch (error) {
+        return sendMailError(app, reply, error);
+      }
+    },
+  );
 
   app.post('/mail/accounts/:id/messages/:uid/flags', authGuard, async (request, reply) => {
     const authUser = request.authUser;

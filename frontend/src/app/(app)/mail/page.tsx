@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Mail, MoreHorizontal, Paperclip, Plus } from
 import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
 
 import { AddAccountDialog } from './AddAccountDialog';
+import { ComposeDialog } from './ComposeDialog';
 import { EditAccountDialog } from './EditAccountDialog';
 import {
   getMessage,
@@ -263,6 +264,10 @@ export default function MailPage(): JSX.Element {
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<EmailAccountDto | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Record<string, boolean>>({});
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeMode, setComposeMode] = useState<'compose' | 'reply' | 'reply-all' | 'forward'>(
+    'compose',
+  );
 
   const accountsQuery = useQuery({
     queryKey: ['mail', 'accounts'],
@@ -399,6 +404,16 @@ export default function MailPage(): JSX.Element {
               <h2 className="text-base font-semibold">{messageList?.folder ?? selectedFolder}</h2>
               <p className="text-text-muted text-sm">{messageList?.total ?? 0} mensajes</p>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setComposeMode('compose');
+                setComposeOpen(true);
+              }}
+              className="bg-accent h-8 rounded-md px-3 text-sm font-medium text-white transition hover:opacity-90"
+            >
+              Redactar
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -516,17 +531,31 @@ export default function MailPage(): JSX.Element {
                 <div className="flex flex-wrap items-center gap-3">
                   <button
                     type="button"
-                    disabled
-                    title="Proximamente"
-                    className="border-border bg-surface-muted h-9 rounded-md border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => {
+                      setComposeMode('reply');
+                      setComposeOpen(true);
+                    }}
+                    className="border-border bg-surface-muted hover:bg-bg h-9 rounded-md border px-3 text-sm font-medium transition"
                   >
                     Responder
                   </button>
                   <button
                     type="button"
-                    disabled
-                    title="Proximamente"
-                    className="border-border bg-surface-muted h-9 rounded-md border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => {
+                      setComposeMode('reply-all');
+                      setComposeOpen(true);
+                    }}
+                    className="border-border bg-surface-muted hover:bg-bg h-9 rounded-md border px-3 text-sm font-medium transition"
+                  >
+                    Resp. todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setComposeMode('forward');
+                      setComposeOpen(true);
+                    }}
+                    className="border-border bg-surface-muted hover:bg-bg h-9 rounded-md border px-3 text-sm font-medium transition"
                   >
                     Reenviar
                   </button>
@@ -610,6 +639,33 @@ export default function MailPage(): JSX.Element {
         open={editingAccount !== null}
         onClose={() => setEditingAccount(null)}
       />
+      {selectedAccount && composeOpen ? (
+        <ComposeDialog
+          open={composeOpen}
+          onClose={() => setComposeOpen(false)}
+          accountId={selectedAccount}
+          accountEmail={accounts.find((a) => a.id === selectedAccount)?.emailAddress ?? ''}
+          signatureHtml={accounts.find((a) => a.id === selectedAccount)?.signatureHtml}
+          mode={composeMode}
+          originalMessage={
+            (composeMode === 'reply' || composeMode === 'reply-all' || composeMode === 'forward') &&
+            currentMessage
+              ? {
+                  uid: currentMessage.uid,
+                  subject: currentMessage.subject,
+                  from: currentMessage.from,
+                  to: currentMessage.to,
+                  cc: currentMessage.cc,
+                  replyTo: currentMessage.replyTo,
+                  messageId: currentMessage.messageId,
+                  date: currentMessage.date,
+                  text: currentMessage.text,
+                  html: currentMessage.html,
+                }
+              : undefined
+          }
+        />
+      ) : null}
     </>
   );
 }

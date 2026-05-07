@@ -187,6 +187,26 @@ export interface MessageDetailDto {
   attachments: AttachmentDto[];
 }
 
+export interface SendEmailInput {
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  text?: string;
+  html?: string;
+  inReplyTo?: string;
+  references?: string;
+  attachments?: Array<{
+    filename: string;
+    content_type: string;
+    data: string;
+  }>;
+}
+
+export interface SendEmailResult {
+  messageId: string;
+}
+
 export function mapMessageAddress(input: unknown): MessageAddressDto {
   const parsed = messageAddressSchema.parse(input);
   return {
@@ -349,6 +369,28 @@ export async function setFlags(
   const payload = setFlagsInputSchema.parse(input);
   await apiFetch<void>(`/mail/accounts/${accountId}/messages/${uid}/flags`, {
     method: 'PATCH',
+    json: payload,
+  });
+}
+
+export async function sendEmail(
+  accountId: string,
+  input: SendEmailInput,
+): Promise<SendEmailResult> {
+  const payload: Record<string, unknown> = {
+    to: input.to,
+    cc: input.cc ?? [],
+    bcc: input.bcc ?? [],
+    subject: input.subject,
+  };
+  if (input.text !== undefined) payload['text'] = input.text;
+  if (input.html !== undefined) payload['html'] = input.html;
+  if (input.inReplyTo) payload['in_reply_to'] = input.inReplyTo;
+  if (input.references) payload['references'] = input.references;
+  if (input.attachments && input.attachments.length > 0) payload['attachments'] = input.attachments;
+
+  return apiFetch<SendEmailResult>(`/mail/accounts/${accountId}/send`, {
+    method: 'POST',
     json: payload,
   });
 }

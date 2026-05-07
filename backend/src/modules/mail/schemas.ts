@@ -48,6 +48,27 @@ export const SetFlagsInputSchema = z.object({
   flagged: z.boolean().optional(),
 });
 
+export const SendEmailInputSchema = z.object({
+  to: z.array(z.string().email()).min(1).max(50),
+  cc: z.array(z.string().email()).max(50).default([]),
+  bcc: z.array(z.string().email()).max(50).default([]),
+  subject: z.string().trim().min(1).max(998),
+  text: z.string().max(500_000).optional(),
+  html: z.string().max(2_000_000).optional(),
+  in_reply_to: z.string().optional(),
+  references: z.string().optional(),
+  attachments: z
+    .array(
+      z.object({
+        filename: z.string().min(1).max(255),
+        content_type: z.string().min(1),
+        data: z.string().min(1),
+      }),
+    )
+    .max(10)
+    .default([]),
+});
+
 export const EmailAccountShareDtoSchema = z.object({
   user_id: z.string(),
 });
@@ -129,6 +150,7 @@ export type UpdateEmailAccountInput = z.infer<typeof UpdateEmailAccountInputSche
 export type ListMessagesQuery = z.infer<typeof ListMessagesQuerySchema>;
 export type GetMessageQuery = z.infer<typeof GetMessageQuerySchema>;
 export type SetFlagsInput = z.infer<typeof SetFlagsInputSchema>;
+export type SendEmailInput = z.infer<typeof SendEmailInputSchema>;
 export type EmailAccountPublicDto = z.infer<typeof EmailAccountPublicDtoSchema>;
 export type FolderDto = z.infer<typeof FolderDtoSchema>;
 export type MessageAddressDto = z.infer<typeof MessageAddressDtoSchema>;

@@ -2,6 +2,7 @@ import type { EmailAccount, EmailAccountShare, Prisma, PrismaClient } from '@pri
 import type { MessageAddressObject, MessageStructureObject } from 'imapflow';
 import { ImapFlow } from 'imapflow';
 import DOMPurify from 'isomorphic-dompurify';
+import nodemailer from 'nodemailer';
 
 import { prisma as defaultPrisma } from '../../core/prisma/client.js';
 import { auditService, type AuditService } from '../audit/service.js';
@@ -14,6 +15,7 @@ import type {
   MessageAddressDto,
   MessageDetailDto,
   MessageListDto,
+  SendEmailInput,
   UpdateEmailAccountInput,
 } from './schemas.js';
 
@@ -35,6 +37,13 @@ class ImapConnectionError extends Error {
   constructor(msg: string) {
     super(msg);
     this.name = 'ImapConnectionError';
+  }
+}
+
+class SmtpConnectionError extends Error {
+  constructor(msg: string) {
+    super(msg);
+    this.name = 'SmtpConnectionError';
   }
 }
 
@@ -659,6 +668,65 @@ export class ImapService {
   }
 }
 
+export class SmtpService {
+  async sendEmail(
+    account: EmailAccount,
+    password: string,
+    input: SendEmailInput,
+  ): Promise<{ messageId: string }> {
+    const safeSubject = sanitizeHeaderValue(input.subject);
+    const safeTo = input.to.map(sanitizeHeaderValue);
+    const safeCc = (input.cc ?? []).map(sanitizeHeaderValue);
+    const safeBcc = (input.bcc ?? []).map(sanitizeHeaderValue);
+
+    const transport = nodemailer.createTransport({
+      host: account.smtpHost,
+      port: account.smtpPort,
+      secure: account.smtpPort === 465,
+      auth: {
+        user: account.emailAddress,
+        pass: password,
+      },
+      connectionTimeout: 15_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 30_000,
+    });
+
+    const attachments = (input.attachments ?? []).map((att) => ({
+      filename: att.filename,
+      content: Buffer.from(att.data, 'base64'),
+      contentType: att.content_type,
+    }));
+
+    try {
+      const info = await transport.sendMail({
+        from: `"${account.displayName ?? ''}" <${account.emailAddress}>`,
+        to: safeTo.join(', '),
+        cc: safeCc.length > 0 ? safeCc.join(', ') : undefined,
+        bcc: safeBcc.length > 0 ? safeBcc.join(', ') : undefined,
+        subject: safeSubject,
+        text: input.text,
+        html: input.html,
+        inReplyTo: input.in_reply_to,
+        references: input.references,
+        attachments,
+      });
+      transport.close();
+      return { messageId: info.messageId ?? '' };
+    } catch (error) {
+      transport.close();
+      throw new SmtpConnectionError(
+        error instanceof Error ? error.message : 'No se pudo enviar el correo',
+      );
+    }
+  }
+}
+
+export function sanitizeHeaderValue(value: string): string {
+  return value.replace(/[\r\n]/g, '');
+}
+
 export const emailAccountService = new EmailAccountService();
 export const imapService = new ImapService();
-export { ForbiddenError, ImapConnectionError, NotFoundError };
+export const smtpService = new SmtpService();
+export { ForbiddenError, ImapConnectionError, NotFoundError, SmtpConnectionError };
