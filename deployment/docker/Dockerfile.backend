@@ -65,4 +65,4 @@ USER heyday
 WORKDIR /app/backend
 EXPOSE 3001
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "dist/api/server.js"]
+CMD ["node", "dist/src/api/server.js"]

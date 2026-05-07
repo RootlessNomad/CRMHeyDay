@@ -53,4 +53,4 @@ RUN pnpm install --prod --frozen-lockfile --prefer-offline || pnpm install --pro
 
 USER heyday
 WORKDIR /app/backend
-CMD ["node", "dist/worker/main.js"]
+CMD ["node", "dist/src/worker/main.js"]
