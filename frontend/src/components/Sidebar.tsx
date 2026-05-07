@@ -19,6 +19,7 @@ import {
   Library,
   Lightbulb,
   ListChecks,
+  Mail,
   PhoneCall,
   Search,
   Settings2,
@@ -58,6 +59,7 @@ const SECTIONS: NavSection[] = [
       { href: '/leads', label: 'Leads', icon: ListChecks },
       { href: '/activities', label: 'Actividades', icon: PhoneCall },
       { href: '/calendar', label: 'Calendario', icon: CalendarDays },
+      { href: '/mail', label: 'Correo', icon: Mail },
     ],
   },
   {
