@@ -3,9 +3,9 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: **DELIVERY ✅** — M0→M5 completados (27 UJ + 11 IT). `/review` M5 PASS-WITH-NOTES. Auditoría holística APTO PARA DELIVERY.
-- **Last Completed**: **Auditoría de seguridad holística + fix `ItemSummaryDto`** — bug `idea_title`/`pillar_label` ausentes en mapper corregido. 578 tests (457 backend + 121 frontend). Auditoría: sin issues críticos.
-- **Next Step**: Despliegue (docker compose up + seed demo + verificación golden paths en navegador) o iteraciones post-delivery con `/iterate`.
+- **Phase**: **M6 — Post-delivery iteración 1** — UJ-28 ✅ completo. UJ-29a/b/c + IT-12 pendientes.
+- **Last Completed**: **UJ-28 Calendario personal y de equipo** — backend (module calendar, migración `add_calendar_events`, RBAC server-side, 474 tests) + frontend (página `/calendar` mensual+semanal, CalendarEventDialog, sidebar entry, 129 tests). Commits 501cf65 + 30d5c7a.
+- **Next Step**: **UJ-29a** — Bandeja de correo (vault + IMAP/SMTP Hostinger + lectura). Instalar `imapflow` + `nodemailer`. Entidades `EmailAccount` + `EmailAccountShare`. Migración nueva. `/mail` page frontend.
 
 ## Estado verificable
 
@@ -14,7 +14,7 @@
 | `pnpm format:check` (root)   |   ✅   |
 | `pnpm lint` (root)           |   ✅   |
 | `pnpm typecheck` (3 ws)      |   ✅   |
-| `pnpm test` (578 tests)      |   ✅   |
+| `pnpm test` (603 tests)      |   ✅   |
 | Repo `.git` inicializado     |   ✅   |
 | CI GitHub Actions definido   |   ✅   |
 | Seed demo type-clean         |   ✅   |
@@ -172,13 +172,26 @@ Ver `docs/decision_log.md` (11 decisiones de Planning) y entradas relevantes del
 | UJ-26 Calendario editorial   | ✅ completed |
 | UJ-27 Exportar + biblioteca  | ✅ completed |
 
+## Progreso M6
+
+| UJ/IT                               | Estado       |
+| ----------------------------------- | ------------ |
+| UJ-28 Calendario personal + general | ✅ completed |
+| UJ-29a Mail — vault + lectura       | ⏳ pending   |
+| UJ-29b Mail — compose + adjuntos    | ⏳ pending   |
+| UJ-29c Mail — search + CRM + drafts | ⏳ pending   |
+| IT-12 Deploy EasyPanel VPS          | ⏳ pending   |
+
 ## Pasos para la siguiente sesión
 
 1. `/session-start`
-2. **`/review` M5** — verificar los 6 UJs de Content Engine (UJ-22→27).
-3. Si review pasa → delivery (seed demo completo, golden paths, auditoría holística).
-4. **Deuda operativa (no bloquea review)**:
-   - Migración Prisma `add_contact_anonymized_at` (deuda UJ-03, requiere docker).
+2. **UJ-29a backend** — instalar `imapflow` + `nodemailer` en backend. Entidades `EmailAccount` + `EmailAccountShare`. Migración `add_email_accounts`. Endpoints `/mail/accounts`, `/mail/accounts/:id/folders`, `/mail/accounts/:id/messages`, `/mail/accounts/:id/messages/:uid`. Pool IMAP, HTML sanitize, RBAC owner+share.
+3. **UJ-29a frontend** — `/mail` page con sidebar cuentas+carpetas, lista mensajes, panel lectura. Form credenciales en perfil.
+4. UJ-29b y UJ-29c en sesiones posteriores.
+5. IT-12 EasyPanel cuando UJ-29 esté completo.
+6. **Deuda operativa acumulada** (no bloquea M6 pero pendiente):
+   - Migración `add_contact_anonymized_at` (deuda UJ-03, requiere docker).
+   - Migración `add_calendar_events` — validar con `prisma migrate dev` cuando DB esté arriba.
    - Conectar repo a GitHub para activar CI.
-   - Refactor `act()` warnings en `LeadFormDialog.test.tsx`.
+   - `act()` warnings en tests de dialogs (CalendarEventDialog, LeadFormDialog).
    - Test 401 para `/dashboard/top-priority-leads`.

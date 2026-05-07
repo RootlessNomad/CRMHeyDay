@@ -1113,3 +1113,22 @@ Petición del usuario tras delivery: (a) CRM en blanco para clientes reales, (b)
 
 - Codex generó la migración manualmente porque Postgres no estaba accesible en `localhost:5432`. Validar con `prisma migrate dev` cuando docker compose esté arriba (idealmente en el reset previo al deploy IT-12).
 - Frontend pendiente — Codex pase 2.
+
+### UJ-28 frontend — Calendario personal y de equipo
+
+**Implementación (Codex pase 2 + fixes de Claude):**
+
+- `frontend/src/lib/api/calendar.ts`: Zod schemas + mappers + CRUD API client. Fix TS4111 (`noPropertyAccessFromIndexSignature`) → bracket notation en `Record<string,unknown>`. Fix TS strict array destructuring en `toIsoFromDate`.
+- `frontend/src/app/(app)/calendar/page.tsx`: vista mensual (default) + toggle semanal, filtro de visibilidad Mis/Generales/Ambos, navegación ◀ Hoy ▶, React Query.
+- `CalendarMonthView.tsx`: CSS Grid 7 cols, 42 celdas (6 semanas), today highlight, chips de evento con color, "+N más" overflow.
+- `CalendarWeekView.tsx`: 7 columnas, eventos del día en lista vertical, all_day al tope.
+- `CalendarEventDialog.tsx`: Modal LG con form completo — title, description, location, all_day toggle, starts_at/ends_at (datetime-local o date según all_day), visibility radio personal/general, entity picker (CompanyPicker + SearchPicker para leads y contactos), color picker. RBAC client-side: personal=owner edita, general=admin edita; read-only hint si sin permisos.
+- Sidebar: entrada `/calendar` con icon `CalendarDays` (diferenciado del `/content/calendar` que usa `Calendar`).
+- Tests: 8 nuevos tests para CalendarEventDialog (create/validate/edit/RBAC) y CalendarMonthView (render/click event/click empty cell).
+
+**Verificación independiente:** typecheck ✓, lint ✓, 129 frontend tests ✓ (+8 vs 121).
+
+**Deuda específica UJ-28:**
+
+- `act()` warnings en tests del dialog (async mutations no envueltas) — mismo patrón pendiente que LeadFormDialog. Polish trivial.
+- Migración `add_calendar_events` generada manualmente por Codex; se aplica en el próximo `prisma migrate dev` (IT-12 o local).
