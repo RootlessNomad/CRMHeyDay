@@ -3,9 +3,9 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: **M6 — Post-delivery iteración 1** — UJ-28 ✅ + UJ-29a ✅ completos. UJ-29b/c + IT-12 pendientes.
-- **Last Completed**: **UJ-29a Mail — vault + lectura** — backend (módulo mail, migración `add_email_accounts`, imapflow, isomorphic-dompurify, RBAC, 492 tests) + frontend (página `/mail` tres paneles, API client Zod-validated, AddAccountDialog, EditAccountDialog, Sidebar entry, 136 tests). Commits [backend] + f83474e.
-- **Next Step**: **UJ-29b** — Compose + reply + reply-all + forward + adjuntos (25MB). POST `/mail/accounts/:id/send` con nodemailer SMTP. ComposeDialog con Tiptap. Threading reply. Firma HTML. Audit log de envíos.
+- **Phase**: **M6 — Post-delivery iteración 1** — UJ-28 ✅ + UJ-29a/b/c ✅ completos. IT-12 pendiente.
+- **Last Completed**: **UJ-29c Mail — search + CRM + drafts** — backend (IMAP SEARCH, to-activity endpoint, 507 tests) + frontend (barra búsqueda debounced, chip contacto CRM, EmailToActivityDialog, autosave borradores localStorage 2s/7d, 147 tests). Commit b5cf19b.
+- **Next Step**: **IT-12** — EasyPanel deploy para `crm.estudioheyday.com` en VPS `46.202.131.13`. `deployment/easypanel/project.yml`. Hardening producción (cookie.secure, CORS crm.estudioheyday.com, logs JSON). Job migraciones + seed base. Cron pg_dump diario 7d retención. Runbook completo.
 
 ## Estado verificable
 
@@ -14,7 +14,7 @@
 | `pnpm format:check` (root)   |   ✅   |
 | `pnpm lint` (root)           |   ✅   |
 | `pnpm typecheck` (3 ws)      |   ✅   |
-| `pnpm test` (628 tests)      |   ✅   |
+| `pnpm test` (654 tests)      |   ✅   |
 | Repo `.git` inicializado     |   ✅   |
 | CI GitHub Actions definido   |   ✅   |
 | Seed demo type-clean         |   ✅   |
@@ -178,18 +178,17 @@ Ver `docs/decision_log.md` (11 decisiones de Planning) y entradas relevantes del
 | ----------------------------------- | ------------ |
 | UJ-28 Calendario personal + general | ✅ completed |
 | UJ-29a Mail — vault + lectura       | ✅ completed |
-| UJ-29b Mail — compose + adjuntos    | ⏳ pending   |
-| UJ-29c Mail — search + CRM + drafts | ⏳ pending   |
+| UJ-29b Mail — compose + adjuntos    | ✅ completed |
+| UJ-29c Mail — search + CRM + drafts | ✅ completed |
 | IT-12 Deploy EasyPanel VPS          | ⏳ pending   |
 
 ## Pasos para la siguiente sesión
 
 1. `/session-start`
-2. **UJ-29b backend** — POST `/mail/accounts/:id/send` con nodemailer SMTP. Multipart (25MB). Reply/reply-all/forward threading. Headers anti-injection. Audit log envíos.
-3. **UJ-29b frontend** — ComposeDialog (Tiptap, destinatarios, asunto, adjuntos, firma). Botones Responder/Reenviar en panel lectura activos.
-4. UJ-29c y IT-12 en sesiones posteriores.
-5. IT-12 EasyPanel cuando UJ-29 esté completo.
-6. **Deuda operativa acumulada** (no bloquea M6 pero pendiente):
+2. **IT-12** — Crear `deployment/easypanel/project.yml` con 5 servicios (frontend, backend, worker, postgres, redis). Hardening prod. Cron pg_dump. Runbook.
+3. Walkthrough deploy con el usuario en VPS `46.202.131.13`.
+4. IT-12 EasyPanel cuando UJ-29 esté completo.
+5. **Deuda operativa acumulada** (no bloquea M6 pero pendiente):
    - Migración `add_contact_anonymized_at` (deuda UJ-03, requiere docker).
    - Migración `add_calendar_events` — validar con `prisma migrate dev` cuando DB esté arriba.
    - Conectar repo a GitHub para activar CI.
