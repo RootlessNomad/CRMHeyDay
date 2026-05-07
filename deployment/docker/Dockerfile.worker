@@ -51,6 +51,9 @@ COPY --from=builder --chown=heyday:nodejs /app/backend/prisma/ ./backend/prisma/
 
 RUN pnpm install --prod --frozen-lockfile --prefer-offline || pnpm install --prod
 
+# Generar Prisma Client en producción
+RUN node_modules/.bin/prisma generate --schema=backend/prisma/schema.prisma || true
+
 USER heyday
 WORKDIR /app/backend
 CMD ["node", "dist/src/worker/main.js"]
