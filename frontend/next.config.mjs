@@ -5,6 +5,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // standalone output: genera un directorio self-contained para Docker prod
+  // (Dockerfile.frontend prod target lo copia desde .next/standalone/)
+  output: 'standalone',
   experimental: {
     typedRoutes: false,
   },

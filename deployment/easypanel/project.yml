@@ -1,0 +1,149 @@
+# HeyDay CRM — EasyPanel project definition
+# Dominio: crm.estudioheyday.com
+# VPS: 46.202.131.13
+#
+# ANTES DE IMPORTAR:
+#   1. Crea el proyecto "heyday" en EasyPanel.
+#   2. Rellena TODAS las variables marcadas con <CAMBIAR> en las secciones env.
+#   3. Importa este fichero desde EasyPanel > Project > Import.
+#   4. Sigue el runbook en deployment/docs/runbook.md para el orden de arranque.
+
+services:
+  # ─────────────────────────────────────────────────────────────
+  # 1. PostgreSQL 16
+  # ─────────────────────────────────────────────────────────────
+  - type: postgres
+    name: heyday-db
+    data:
+      projectName: heyday
+      serviceName: heyday-db
+      image: postgres:16-alpine
+      password: <CAMBIAR_POSTGRES_PASSWORD>
+
+  # ─────────────────────────────────────────────────────────────
+  # 2. Redis 7
+  # ─────────────────────────────────────────────────────────────
+  - type: redis
+    name: heyday-redis
+    data:
+      projectName: heyday
+      serviceName: heyday-redis
+      image: redis:7-alpine
+      password: ''
+
+  # ─────────────────────────────────────────────────────────────
+  # 3. Backend — Fastify API
+  # ─────────────────────────────────────────────────────────────
+  - type: app
+    name: heyday-backend
+    data:
+      projectName: heyday
+      serviceName: heyday-backend
+      source:
+        type: github
+        owner: <GITHUB_USER>
+        repo: <GITHUB_REPO>
+        ref: main
+        path: /
+      build:
+        type: dockerfile
+        dockerfilePath: deployment/docker/Dockerfile.backend
+        buildTarget: prod
+      deploy:
+        replicas: 1
+        zeroDowntime: true
+        healthcheckPath: /health
+      env: |
+        APP_ENV=production
+        LOG_LEVEL=info
+        API_PORT=3001
+        DATABASE_URL=postgresql://postgres:<CAMBIAR_POSTGRES_PASSWORD>@heyday-db:5432/heyday_crm?schema=public
+        REDIS_URL=redis://heyday-redis:6379
+        JWT_ACCESS_SECRET=<CAMBIAR_JWT_ACCESS_SECRET>
+        JWT_REFRESH_SECRET=<CAMBIAR_JWT_REFRESH_SECRET>
+        JWT_ACCESS_TTL=15m
+        JWT_REFRESH_TTL=14d
+        CREDENTIAL_MASTER_KEY=<CAMBIAR_CREDENTIAL_MASTER_KEY>
+        ANTHROPIC_API_KEY=<CAMBIAR_ANTHROPIC_API_KEY>
+        CLAUDE_MODEL_DEFAULT=claude-sonnet-4-6
+        CLAUDE_MODEL_FAST=claude-haiku-4-5-20251001
+        CLAUDE_MODEL_PREMIUM=claude-opus-4-7
+        APP_URL=https://crm.estudioheyday.com
+        COOKIE_DOMAIN=crm.estudioheyday.com
+        TZ=Europe/Madrid
+        SEED_ALEX_PASSWORD=<CAMBIAR_SEED_ALEX_PASSWORD>
+        SEED_ALBA_PASSWORD=<CAMBIAR_SEED_ALBA_PASSWORD>
+      ports:
+        - published: 3001
+          target: 3001
+          protocol: tcp
+
+  # ─────────────────────────────────────────────────────────────
+  # 4. Worker — BullMQ + Playwright
+  # ─────────────────────────────────────────────────────────────
+  - type: app
+    name: heyday-worker
+    data:
+      projectName: heyday
+      serviceName: heyday-worker
+      source:
+        type: github
+        owner: <GITHUB_USER>
+        repo: <GITHUB_REPO>
+        ref: main
+        path: /
+      build:
+        type: dockerfile
+        dockerfilePath: deployment/docker/Dockerfile.worker
+        buildTarget: prod
+      deploy:
+        replicas: 1
+        zeroDowntime: false
+      env: |
+        APP_ENV=production
+        LOG_LEVEL=info
+        DATABASE_URL=postgresql://postgres:<CAMBIAR_POSTGRES_PASSWORD>@heyday-db:5432/heyday_crm?schema=public
+        REDIS_URL=redis://heyday-redis:6379
+        CREDENTIAL_MASTER_KEY=<CAMBIAR_CREDENTIAL_MASTER_KEY>
+        ANTHROPIC_API_KEY=<CAMBIAR_ANTHROPIC_API_KEY>
+        CLAUDE_MODEL_DEFAULT=claude-sonnet-4-6
+        CLAUDE_MODEL_FAST=claude-haiku-4-5-20251001
+        CLAUDE_MODEL_PREMIUM=claude-opus-4-7
+        TZ=Europe/Madrid
+
+  # ─────────────────────────────────────────────────────────────
+  # 5. Frontend — Next.js 15 (standalone)
+  # ─────────────────────────────────────────────────────────────
+  - type: app
+    name: heyday-frontend
+    data:
+      projectName: heyday
+      serviceName: heyday-frontend
+      source:
+        type: github
+        owner: <GITHUB_USER>
+        repo: <GITHUB_REPO>
+        ref: main
+        path: /
+      build:
+        type: dockerfile
+        dockerfilePath: deployment/docker/Dockerfile.frontend
+        buildTarget: prod
+      deploy:
+        replicas: 1
+        zeroDowntime: true
+        healthcheckPath: /
+      env: |
+        NODE_ENV=production
+        PORT=3000
+        NEXT_PUBLIC_API_URL=https://crm.estudioheyday.com/api/v1
+        NEXT_PUBLIC_APP_NAME=HeyDay CRM
+        TZ=Europe/Madrid
+      domains:
+        - host: crm.estudioheyday.com
+          port: 3000
+          https: true
+      ports:
+        - published: 3000
+          target: 3000
+          protocol: tcp
