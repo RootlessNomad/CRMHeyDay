@@ -3,9 +3,9 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: **M6 — Post-delivery iteración 1** — UJ-28 ✅ completo. UJ-29a/b/c + IT-12 pendientes.
-- **Last Completed**: **UJ-28 Calendario personal y de equipo** — backend (module calendar, migración `add_calendar_events`, RBAC server-side, 474 tests) + frontend (página `/calendar` mensual+semanal, CalendarEventDialog, sidebar entry, 129 tests). Commits 501cf65 + 30d5c7a.
-- **Next Step**: **UJ-29a** — Bandeja de correo (vault + IMAP/SMTP Hostinger + lectura). Instalar `imapflow` + `nodemailer`. Entidades `EmailAccount` + `EmailAccountShare`. Migración nueva. `/mail` page frontend.
+- **Phase**: **M6 — Post-delivery iteración 1** — UJ-28 ✅ + UJ-29a ✅ completos. UJ-29b/c + IT-12 pendientes.
+- **Last Completed**: **UJ-29a Mail — vault + lectura** — backend (módulo mail, migración `add_email_accounts`, imapflow, isomorphic-dompurify, RBAC, 492 tests) + frontend (página `/mail` tres paneles, API client Zod-validated, AddAccountDialog, EditAccountDialog, Sidebar entry, 136 tests). Commits [backend] + f83474e.
+- **Next Step**: **UJ-29b** — Compose + reply + reply-all + forward + adjuntos (25MB). POST `/mail/accounts/:id/send` con nodemailer SMTP. ComposeDialog con Tiptap. Threading reply. Firma HTML. Audit log de envíos.
 
 ## Estado verificable
 
@@ -14,7 +14,7 @@
 | `pnpm format:check` (root)   |   ✅   |
 | `pnpm lint` (root)           |   ✅   |
 | `pnpm typecheck` (3 ws)      |   ✅   |
-| `pnpm test` (603 tests)      |   ✅   |
+| `pnpm test` (628 tests)      |   ✅   |
 | Repo `.git` inicializado     |   ✅   |
 | CI GitHub Actions definido   |   ✅   |
 | Seed demo type-clean         |   ✅   |
@@ -177,7 +177,7 @@ Ver `docs/decision_log.md` (11 decisiones de Planning) y entradas relevantes del
 | UJ/IT                               | Estado       |
 | ----------------------------------- | ------------ |
 | UJ-28 Calendario personal + general | ✅ completed |
-| UJ-29a Mail — vault + lectura       | ⏳ pending   |
+| UJ-29a Mail — vault + lectura       | ✅ completed |
 | UJ-29b Mail — compose + adjuntos    | ⏳ pending   |
 | UJ-29c Mail — search + CRM + drafts | ⏳ pending   |
 | IT-12 Deploy EasyPanel VPS          | ⏳ pending   |
@@ -185,9 +185,9 @@ Ver `docs/decision_log.md` (11 decisiones de Planning) y entradas relevantes del
 ## Pasos para la siguiente sesión
 
 1. `/session-start`
-2. **UJ-29a backend** — instalar `imapflow` + `nodemailer` en backend. Entidades `EmailAccount` + `EmailAccountShare`. Migración `add_email_accounts`. Endpoints `/mail/accounts`, `/mail/accounts/:id/folders`, `/mail/accounts/:id/messages`, `/mail/accounts/:id/messages/:uid`. Pool IMAP, HTML sanitize, RBAC owner+share.
-3. **UJ-29a frontend** — `/mail` page con sidebar cuentas+carpetas, lista mensajes, panel lectura. Form credenciales en perfil.
-4. UJ-29b y UJ-29c en sesiones posteriores.
+2. **UJ-29b backend** — POST `/mail/accounts/:id/send` con nodemailer SMTP. Multipart (25MB). Reply/reply-all/forward threading. Headers anti-injection. Audit log envíos.
+3. **UJ-29b frontend** — ComposeDialog (Tiptap, destinatarios, asunto, adjuntos, firma). Botones Responder/Reenviar en panel lectura activos.
+4. UJ-29c y IT-12 en sesiones posteriores.
 5. IT-12 EasyPanel cuando UJ-29 esté completo.
 6. **Deuda operativa acumulada** (no bloquea M6 pero pendiente):
    - Migración `add_contact_anonymized_at` (deuda UJ-03, requiere docker).
