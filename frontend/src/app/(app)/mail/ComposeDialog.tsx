@@ -47,6 +47,59 @@ interface FieldErrors {
 
 const MAX_TOTAL_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function getDraftKey(accountId: string, mode: string): string {
+  return `heyday:mail:draft:${accountId}:${mode}`;
+}
+
+function loadDraft(key: string): { to: string; cc: string; bcc: string; subject: string } | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      to?: string;
+      cc?: string;
+      bcc?: string;
+      subject?: string;
+      savedAt?: number;
+    };
+    if (parsed.savedAt && Date.now() - parsed.savedAt > DRAFT_TTL_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return {
+      to: parsed.to ?? '',
+      cc: parsed.cc ?? '',
+      bcc: parsed.bcc ?? '',
+      subject: parsed.subject ?? '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(
+  key: string,
+  fields: { to: string; cc: string; bcc: string; subject: string },
+): void {
+  try {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(key, JSON.stringify({ ...fields, savedAt: Date.now() }));
+  } catch {
+    // noop
+  }
+}
+
+function clearDraft(key: string): void {
+  try {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(key);
+  } catch {
+    // noop
+  }
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -201,6 +254,8 @@ export function ComposeDialog({
   const [showCc, setShowCc] = useState(false);
   const [showBcc, setShowBcc] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [hasDraft, setHasDraft] = useState(false);
+  const draftKey = getDraftKey(accountId, mode);
 
   const initialHtml = useMemo(
     () => buildInitialHtml(mode, signatureHtml, originalMessage),
@@ -267,6 +322,40 @@ export function ComposeDialog({
     }
   }, [accountEmail, editor, mode, open, originalMessage, signatureHtml]);
 
+  useEffect(() => {
+    if (!open) return;
+
+    const draft = loadDraft(draftKey);
+    if (!draft) {
+      setHasDraft(false);
+      return;
+    }
+
+    setTo((current) => (current ? current : draft.to));
+    setCc((current) => (current ? current : draft.cc));
+    setBcc((current) => (current ? current : draft.bcc));
+    setSubject((current) => (current ? current : draft.subject));
+    setHasDraft(true);
+  }, [draftKey, open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const timer = window.setTimeout(() => {
+      const fields = { to, cc, bcc, subject };
+      const hasContent = Object.values(fields).some((value) => value.trim().length > 0);
+      if (!hasContent) {
+        clearDraft(draftKey);
+        setHasDraft(false);
+        return;
+      }
+      saveDraft(draftKey, fields);
+      setHasDraft(true);
+    }, 2000);
+
+    return () => window.clearTimeout(timer);
+  }, [bcc, cc, draftKey, open, subject, to]);
+
   const sendMutation = useMutation({
     mutationFn: async () => {
       if (!editor) throw new Error('Editor no disponible');
@@ -293,6 +382,8 @@ export function ComposeDialog({
       });
     },
     onSuccess: () => {
+      clearDraft(draftKey);
+      setHasDraft(false);
       toast.success('Mensaje enviado.');
       onClose();
     },
@@ -375,6 +466,22 @@ export function ComposeDialog({
               Para
             </label>
             <div className="flex items-center gap-3 text-sm">
+              {hasDraft ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearDraft(draftKey);
+                    setTo('');
+                    setCc('');
+                    setBcc('');
+                    setSubject('');
+                    setHasDraft(false);
+                  }}
+                  className="text-text-muted hover:text-text text-xs underline"
+                >
+                  Descartar borrador
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setShowCc((current) => !current)}

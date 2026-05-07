@@ -1,23 +1,37 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Mail, MoreHorizontal, Paperclip, Plus } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Mail,
+  MoreHorizontal,
+  Paperclip,
+  Plus,
+  Search,
+  User,
+  X,
+} from 'lucide-react';
 import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
 
 import { AddAccountDialog } from './AddAccountDialog';
 import { ComposeDialog } from './ComposeDialog';
+import { EmailToActivityDialog } from './EmailToActivityDialog';
 import { EditAccountDialog } from './EditAccountDialog';
 import {
   getMessage,
   listAccounts,
   listFolders,
   listMessages,
+  searchMessages,
   setFlags,
   type EmailAccountDto,
   type FolderDto,
   type MessageAddressDto,
   type MessageListItemDto,
 } from '@/lib/api/mail';
+import { listContacts } from '@/lib/api/contacts';
+import type { ContactDto } from '@/types/contact';
 
 const PAGE_SIZE = 50;
 const SEEN_FLAG = '\\Seen';
@@ -117,6 +131,17 @@ function MessageRowSkeleton(): JSX.Element {
       </div>
     </div>
   );
+}
+
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+
+  return debounced;
 }
 
 function FolderList({
@@ -268,6 +293,9 @@ export default function MailPage(): JSX.Element {
   const [composeMode, setComposeMode] = useState<'compose' | 'reply' | 'reply-all' | 'forward'>(
     'compose',
   );
+  const [toActivityOpen, setToActivityOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const searchQuery = useDebouncedValue(searchInput, 400);
 
   const accountsQuery = useQuery({
     queryKey: ['mail', 'accounts'],
@@ -275,8 +303,13 @@ export default function MailPage(): JSX.Element {
   });
 
   const messagesQuery = useQuery({
-    queryKey: ['mail', 'messages', selectedAccount, selectedFolder, page, PAGE_SIZE],
-    queryFn: () => listMessages(selectedAccount ?? '', selectedFolder, page, PAGE_SIZE),
+    queryKey: searchQuery
+      ? ['mail', 'search', selectedAccount, selectedFolder, searchQuery, page, PAGE_SIZE]
+      : ['mail', 'messages', selectedAccount, selectedFolder, page, PAGE_SIZE],
+    queryFn: () =>
+      searchQuery
+        ? searchMessages(selectedAccount ?? '', searchQuery, selectedFolder, page, PAGE_SIZE)
+        : listMessages(selectedAccount ?? '', selectedFolder, page, PAGE_SIZE),
     enabled: Boolean(selectedAccount),
   });
 
@@ -307,6 +340,7 @@ export default function MailPage(): JSX.Element {
   useEffect(() => {
     setPage(1);
     setSelectedUid(null);
+    setSearchInput('');
   }, [selectedAccount, selectedFolder]);
 
   const accounts = accountsQuery.data ?? [];
@@ -319,6 +353,27 @@ export default function MailPage(): JSX.Element {
     () => (currentMessage?.html ? sanitizeHtml(currentMessage.html) : null),
     [currentMessage?.html],
   );
+  const senderEmails = useMemo(
+    () =>
+      currentMessage?.from
+        .map((address) => address.address)
+        .filter((a): a is string => Boolean(a)) ?? [],
+    [currentMessage],
+  );
+
+  const contactMatchQuery = useQuery({
+    queryKey: ['contacts', 'by-email', senderEmails],
+    queryFn: async (): Promise<ContactDto[]> => {
+      if (senderEmails.length === 0) return [];
+      const result = await listContacts({ q: senderEmails[0], page: 1, pageSize: 5 });
+      return result.items.filter(
+        (contact) =>
+          contact.email &&
+          senderEmails.some((email) => email.toLowerCase() === contact.email?.toLowerCase()),
+      );
+    },
+    enabled: senderEmails.length > 0 && Boolean(currentMessage),
+  });
 
   async function markMessageReadIfNeeded(message: MessageListItemDto): Promise<void> {
     if (!selectedAccount || !isUnread(message)) return;
@@ -327,6 +382,9 @@ export default function MailPage(): JSX.Element {
 
     await queryClient.invalidateQueries({
       queryKey: ['mail', 'messages', selectedAccount, selectedFolder, page, PAGE_SIZE],
+    });
+    await queryClient.invalidateQueries({
+      queryKey: ['mail', 'search', selectedAccount, selectedFolder],
     });
     await queryClient.invalidateQueries({
       queryKey: ['mail', 'message', selectedAccount, selectedFolder, message.uid],
@@ -414,6 +472,30 @@ export default function MailPage(): JSX.Element {
             >
               Redactar
             </button>
+          </div>
+
+          <div className="border-border flex items-center gap-2 border-b px-3 py-2">
+            <Search className="text-text-muted h-4 w-4 shrink-0" />
+            <input
+              type="search"
+              placeholder="Buscar mensajes..."
+              value={searchInput}
+              onChange={(event) => {
+                setSearchInput(event.target.value);
+                setPage(1);
+              }}
+              className="placeholder:text-text-muted flex-1 bg-transparent text-sm outline-none"
+            />
+            {searchInput ? (
+              <button
+                type="button"
+                onClick={() => setSearchInput('')}
+                className="text-text-muted hover:text-text"
+                aria-label="Limpiar búsqueda"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -559,6 +641,13 @@ export default function MailPage(): JSX.Element {
                   >
                     Reenviar
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setToActivityOpen(true)}
+                    className="border-border bg-surface-muted hover:bg-bg h-9 rounded-md border px-3 text-sm font-medium transition"
+                  >
+                    Registrar en CRM
+                  </button>
                 </div>
 
                 <h2 className="mt-4 text-2xl font-semibold tracking-tight">
@@ -585,6 +674,21 @@ export default function MailPage(): JSX.Element {
                     <span>{formatDateTime(currentMessage.date)}</span>
                   </div>
                 </div>
+
+                {contactMatchQuery.data && contactMatchQuery.data.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {contactMatchQuery.data.map((contact) => (
+                      <a
+                        key={contact.id}
+                        href={`/contacts/${contact.id}`}
+                        className="bg-accent-soft text-accent inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition hover:opacity-80"
+                      >
+                        <User className="h-3 w-3" />
+                        {contact.first_name} {contact.last_name}
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex-1 overflow-y-auto p-6">
@@ -664,6 +768,21 @@ export default function MailPage(): JSX.Element {
                 }
               : undefined
           }
+        />
+      ) : null}
+      {selectedUid && currentMessage && selectedAccount ? (
+        <EmailToActivityDialog
+          open={toActivityOpen}
+          onClose={() => setToActivityOpen(false)}
+          accountId={selectedAccount}
+          uid={selectedUid}
+          folder={selectedFolder}
+          defaultTitle={
+            currentMessage.subject
+              ? `Email: ${currentMessage.subject.slice(0, 190)}`
+              : 'Email registrado'
+          }
+          defaultBody={currentMessage.text?.slice(0, 500) ?? ''}
         />
       ) : null}
     </>

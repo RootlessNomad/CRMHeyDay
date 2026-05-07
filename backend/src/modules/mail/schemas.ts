@@ -38,6 +38,13 @@ export const ListMessagesQuerySchema = z.object({
   page_size: z.coerce.number().int().min(1).max(200).default(50),
 });
 
+export const SearchMessagesQuerySchema = z.object({
+  q: z.string().trim().min(1).max(200),
+  folder: z.string().min(1).default('INBOX'),
+  page: z.coerce.number().int().min(1).default(1),
+  page_size: z.coerce.number().int().min(1).max(100).default(50),
+});
+
 export const GetMessageQuerySchema = z.object({
   folder: z.string().min(1).default('INBOX'),
 });
@@ -67,6 +74,15 @@ export const SendEmailInputSchema = z.object({
     )
     .max(10)
     .default([]),
+});
+
+export const EmailToActivityInputSchema = z.object({
+  folder: z.string().min(1),
+  uid: z.number().int().positive(),
+  entity_type: z.enum(['contact', 'lead', 'company']),
+  entity_id: z.string().min(1),
+  title: z.string().trim().max(200).optional(),
+  body: z.string().trim().max(10_000).optional(),
 });
 
 export const EmailAccountShareDtoSchema = z.object({
@@ -148,9 +164,11 @@ export const MessageDetailDtoSchema = z.object({
 export type CreateEmailAccountInput = z.infer<typeof CreateEmailAccountInputSchema>;
 export type UpdateEmailAccountInput = z.infer<typeof UpdateEmailAccountInputSchema>;
 export type ListMessagesQuery = z.infer<typeof ListMessagesQuerySchema>;
+export type SearchMessagesQuery = z.infer<typeof SearchMessagesQuerySchema>;
 export type GetMessageQuery = z.infer<typeof GetMessageQuerySchema>;
 export type SetFlagsInput = z.infer<typeof SetFlagsInputSchema>;
 export type SendEmailInput = z.infer<typeof SendEmailInputSchema>;
+export type EmailToActivityInput = z.infer<typeof EmailToActivityInputSchema>;
 export type EmailAccountPublicDto = z.infer<typeof EmailAccountPublicDtoSchema>;
 export type FolderDto = z.infer<typeof FolderDtoSchema>;
 export type MessageAddressDto = z.infer<typeof MessageAddressDtoSchema>;

@@ -349,6 +349,25 @@ export async function listMessages(
   return mapMessageList(response);
 }
 
+export async function searchMessages(
+  accountId: string,
+  q: string,
+  folder: string,
+  page: number,
+  pageSize: number,
+): Promise<MessageListDto> {
+  const params = new URLSearchParams({
+    q,
+    folder,
+    page: String(page),
+    page_size: String(pageSize),
+  });
+  const raw = await apiFetch<{ data: unknown }>(
+    `/mail/accounts/${accountId}/search?${params.toString()}`,
+  );
+  return mapMessageList(raw['data']);
+}
+
 export async function getMessage(
   accountId: string,
   uid: number,
@@ -393,4 +412,18 @@ export async function sendEmail(
     method: 'POST',
     json: payload,
   });
+}
+
+export async function emailToActivity(
+  accountId: string,
+  input: {
+    folder: string;
+    uid: number;
+    entity_type: 'contact' | 'lead' | 'company';
+    entity_id: string;
+    title?: string;
+    body?: string;
+  },
+): Promise<{ id: string }> {
+  return apiFetch(`/mail/accounts/${accountId}/to-activity`, { method: 'POST', json: input });
 }

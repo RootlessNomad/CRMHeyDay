@@ -4,11 +4,13 @@ import { z } from 'zod';
 
 import {
   CreateEmailAccountInputSchema,
+  EmailToActivityInputSchema,
   ForbiddenError,
   GetMessageQuerySchema,
   ImapConnectionError,
   ListMessagesQuerySchema,
   NotFoundError,
+  SearchMessagesQuerySchema,
   SendEmailInputSchema,
   SmtpConnectionError,
   SetFlagsInputSchema,
@@ -175,6 +177,37 @@ export async function registerMailRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  app.get(
+    '/mail/accounts/:id/search',
+    {
+      preHandler: [app.requireAuth],
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: '1 minute',
+          hook: 'preHandler',
+          keyGenerator: (request: { authUser?: { id?: string }; ip: string }) =>
+            request.authUser?.id ?? request.ip,
+        },
+      },
+    },
+    async (request, reply) => {
+      const authUser = request.authUser;
+      if (!authUser) throw app.httpErrors.unauthorized();
+
+      const { id } = IdParamsSchema.parse(request.params);
+      const query = SearchMessagesQuerySchema.parse(request.query);
+
+      try {
+        const { account, password } = await emailAccountService.getAccessible(id, authUser.id);
+        const data = await imapService.searchMessages(account, password, query);
+        return reply.code(200).send({ data });
+      } catch (error) {
+        return sendMailError(app, reply, error);
+      }
+    },
+  );
+
   app.get('/mail/accounts/:id/messages/:uid', authGuard, async (request, reply) => {
     const authUser = request.authUser;
     if (!authUser) throw app.httpErrors.unauthorized();
@@ -262,6 +295,21 @@ export async function registerMailRoutes(app: FastifyInstance): Promise<void> {
         flagged: body.flagged,
       });
       return reply.code(200).send();
+    } catch (error) {
+      return sendMailError(app, reply, error);
+    }
+  });
+
+  app.post('/mail/accounts/:id/to-activity', authGuard, async (request, reply) => {
+    const authUser = request.authUser;
+    if (!authUser) throw app.httpErrors.unauthorized();
+
+    const { id } = IdParamsSchema.parse(request.params);
+    const body = EmailToActivityInputSchema.parse(request.body);
+
+    try {
+      const activity = await emailAccountService.createActivityFromEmail(id, body, authUser.id);
+      return reply.code(201).send(activity);
     } catch (error) {
       return sendMailError(app, reply, error);
     }

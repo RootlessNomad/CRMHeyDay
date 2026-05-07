@@ -1,8 +1,13 @@
-import type { EmailAccount, EmailAccountShare, PrismaClient } from '@prisma/client';
+import type { Activity, EmailAccount, EmailAccountShare, PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AuditEntry } from '../audit/service.js';
-import { SendEmailInputSchema, type CreateEmailAccountInput } from './schemas.js';
+import {
+  EmailToActivityInputSchema,
+  SearchMessagesQuerySchema,
+  SendEmailInputSchema,
+  type CreateEmailAccountInput,
+} from './schemas.js';
 import {
   EmailAccountService,
   ForbiddenError,
@@ -27,6 +32,7 @@ interface FakeDb {
   emailAccounts: Map<string, EmailAccount>;
   shares: EmailAccountShare[];
   credentials: Map<string, FakeCredential>;
+  activities: Map<string, Activity>;
 }
 
 function buildFakeDb(): FakeDb {
@@ -34,6 +40,7 @@ function buildFakeDb(): FakeDb {
     emailAccounts: new Map(),
     shares: [],
     credentials: new Map(),
+    activities: new Map(),
   };
 }
 
@@ -171,6 +178,35 @@ function makePrismaMock(db: FakeDb): PrismaClient {
     credential: {
       delete: async ({ where }: { where: { id: string } }) => {
         db.credentials.delete(where.id);
+      },
+    },
+    activity: {
+      create: async ({
+        data,
+      }: {
+        data: Pick<
+          Activity,
+          'entityType' | 'entityId' | 'kind' | 'title' | 'body' | 'ownerId' | 'createdById'
+        >;
+      }) => {
+        const now = new Date();
+        const activity = {
+          id: `activity_${db.activities.size + 1}`,
+          entityType: data.entityType,
+          entityId: data.entityId,
+          kind: data.kind,
+          title: data.title,
+          body: data.body,
+          ownerId: data.ownerId,
+          dueAt: null,
+          completedAt: null,
+          remindAt: null,
+          createdById: data.createdById,
+          createdAt: now,
+          updatedAt: now,
+        } satisfies Activity;
+        db.activities.set(activity.id, activity);
+        return activity;
       },
     },
   } as unknown as PrismaClient;
@@ -410,6 +446,154 @@ describe('EmailAccountService', () => {
 
     expect(db.emailAccounts.has('acct_1')).toBe(false);
   });
+
+  it('createActivityFromEmail creates activity with kind=email_log', async () => {
+    db.credentials.set('cred_1', {
+      id: 'cred_1',
+      key: 'mail:owner@test.com',
+      provider: 'email_imap',
+      label: 'owner@test.com',
+      plaintext: 'secret',
+    });
+    db.emailAccounts.set(
+      'acct_1',
+      makeEmailAccount({
+        id: 'acct_1',
+        ownerId: 'user_1',
+        emailAddress: 'owner@test.com',
+        credentialId: 'cred_1',
+      }),
+    );
+
+    const getMessageSpy = vi.spyOn(imapService, 'getMessage').mockResolvedValue({
+      uid: 77,
+      message_id: '<msg-1>',
+      subject: 'Quarterly recap',
+      date: '2026-05-07T10:30:00.000Z',
+      from: [{ name: 'Alice', address: 'alice@example.com' }],
+      to: [{ name: 'Owner', address: 'owner@test.com' }],
+      cc: [],
+      bcc: [],
+      reply_to: [],
+      flags: [],
+      text: 'Body preview from email',
+      html: null,
+      attachments: [],
+    });
+
+    const result = await service.createActivityFromEmail(
+      'acct_1',
+      {
+        folder: 'INBOX',
+        uid: 77,
+        entity_type: 'contact',
+        entity_id: 'contact_1',
+        title: 'Follow-up note',
+        body: 'Logged from mailbox',
+      },
+      'user_1',
+    );
+
+    expect(getMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'acct_1' }),
+      'secret',
+      'INBOX',
+      77,
+    );
+    expect(db.activities.size).toBe(1);
+    expect(result.kind).toBe('email_log');
+    expect(result.title).toBe('Follow-up note');
+    expect(result.body).toBe('Logged from mailbox');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'email.to_activity',
+        actorUserId: 'user_1',
+        entityId: 'acct_1',
+      }),
+    );
+  });
+
+  it('createActivityFromEmail uses message subject as title prefix when title is omitted', async () => {
+    db.credentials.set('cred_1', {
+      id: 'cred_1',
+      key: 'mail:owner@test.com',
+      provider: 'email_imap',
+      label: 'owner@test.com',
+      plaintext: 'secret',
+    });
+    db.emailAccounts.set(
+      'acct_1',
+      makeEmailAccount({
+        id: 'acct_1',
+        ownerId: 'user_1',
+        emailAddress: 'owner@test.com',
+        credentialId: 'cred_1',
+      }),
+    );
+
+    vi.spyOn(imapService, 'getMessage').mockResolvedValue({
+      uid: 88,
+      message_id: '<msg-2>',
+      subject: 'Important intro',
+      date: '2026-05-07T10:30:00.000Z',
+      from: [{ name: 'Bob', address: 'bob@example.com' }],
+      to: [{ name: 'Owner', address: 'owner@test.com' }],
+      cc: [],
+      bcc: [],
+      reply_to: [],
+      flags: [],
+      text: 'Hello from Bob',
+      html: null,
+      attachments: [],
+    });
+
+    const result = await service.createActivityFromEmail(
+      'acct_1',
+      {
+        folder: 'INBOX',
+        uid: 88,
+        entity_type: 'lead',
+        entity_id: 'lead_1',
+      },
+      'user_1',
+    );
+
+    expect(result.title).toBe('Email: Important intro');
+    expect(result.body).toContain('Bob <bob@example.com>');
+    expect(result.body).toContain('Hello from Bob');
+  });
+
+  it('createActivityFromEmail throws ForbiddenError for unrelated user', async () => {
+    db.credentials.set('cred_1', {
+      id: 'cred_1',
+      key: 'mail:private@test.com',
+      provider: 'email_imap',
+      label: 'private@test.com',
+      plaintext: 'secret',
+    });
+    db.emailAccounts.set(
+      'acct_1',
+      makeEmailAccount({
+        id: 'acct_1',
+        ownerId: 'owner_1',
+        emailAddress: 'private@test.com',
+        credentialId: 'cred_1',
+      }),
+    );
+
+    await expect(
+      service.createActivityFromEmail(
+        'acct_1',
+        {
+          folder: 'INBOX',
+          uid: 1,
+          entity_type: 'company',
+          entity_id: 'company_1',
+        },
+        'user_1',
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
 });
 
 describe('SendEmailInputSchema', () => {
@@ -462,6 +646,62 @@ describe('SendEmailInputSchema', () => {
       subject: 'Hi',
       attachments: [],
     });
+  });
+});
+
+describe('SearchMessagesQuerySchema', () => {
+  it('accepts valid input and applies defaults', () => {
+    expect(
+      SearchMessagesQuerySchema.parse({
+        q: 'invoice',
+      }),
+    ).toEqual({
+      q: 'invoice',
+      folder: 'INBOX',
+      page: 1,
+      page_size: 50,
+    });
+  });
+
+  it('rejects empty q', () => {
+    expect(() => SearchMessagesQuerySchema.parse({ q: '' })).toThrow();
+  });
+
+  it('rejects q longer than 200 chars', () => {
+    expect(() =>
+      SearchMessagesQuerySchema.parse({
+        q: 'a'.repeat(201),
+      }),
+    ).toThrow();
+  });
+});
+
+describe('EmailToActivityInputSchema', () => {
+  it('accepts valid input', () => {
+    expect(
+      EmailToActivityInputSchema.parse({
+        folder: 'INBOX',
+        uid: 42,
+        entity_type: 'contact',
+        entity_id: 'contact_1',
+      }),
+    ).toEqual({
+      folder: 'INBOX',
+      uid: 42,
+      entity_type: 'contact',
+      entity_id: 'contact_1',
+    });
+  });
+
+  it('rejects invalid entity_type', () => {
+    expect(() =>
+      EmailToActivityInputSchema.parse({
+        folder: 'INBOX',
+        uid: 42,
+        entity_type: 'deal',
+        entity_id: 'contact_1',
+      }),
+    ).toThrow();
   });
 });
 

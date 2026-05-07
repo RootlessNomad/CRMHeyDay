@@ -5,16 +5,19 @@ import DOMPurify from 'isomorphic-dompurify';
 import nodemailer from 'nodemailer';
 
 import { prisma as defaultPrisma } from '../../core/prisma/client.js';
+import type { ActivityDto } from '../activities/schemas.js';
 import { auditService, type AuditService } from '../audit/service.js';
 import { credentialsService, type CredentialsService } from '../credentials/service.js';
 import type {
   AttachmentDto,
   CreateEmailAccountInput,
   EmailAccountPublicDto,
+  EmailToActivityInput,
   FolderDto,
   MessageAddressDto,
   MessageDetailDto,
   MessageListDto,
+  SearchMessagesQuery,
   SendEmailInput,
   UpdateEmailAccountInput,
 } from './schemas.js';
@@ -463,6 +466,75 @@ export class EmailAccountService {
     const { shares: _shares, credential: _credential, ...account } = existing;
     return { account, password };
   }
+
+  async createActivityFromEmail(
+    accountId: string,
+    input: EmailToActivityInput,
+    actorUserId: string,
+  ): Promise<ActivityDto> {
+    const { account, password } = await this.getAccessible(accountId, actorUserId);
+
+    const message = await imapService.getMessage(account, password, input.folder, input.uid);
+
+    const title =
+      input.title?.trim() ||
+      (message.subject ? `Email: ${message.subject.slice(0, 195)}` : 'Email registrado');
+
+    const body =
+      input.body?.trim() ||
+      [
+        message.from
+          .map((address) => `${address.name ?? ''} <${address.address ?? ''}>`.trim())
+          .filter(Boolean)
+          .join(', '),
+        message.date ? new Date(message.date).toLocaleString('es-ES') : null,
+        message.text?.slice(0, 500) ?? null,
+      ]
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+
+    const activity = await this.db.activity.create({
+      data: {
+        entityType: input.entity_type,
+        entityId: input.entity_id,
+        kind: 'email_log',
+        title,
+        body: body || null,
+        ownerId: actorUserId,
+        createdById: actorUserId,
+      },
+    });
+
+    await this.audit.record({
+      action: 'email.to_activity',
+      actorUserId,
+      entityType: 'email_account',
+      entityId: accountId,
+      metadata: {
+        activity_id: activity.id,
+        entity_type: input.entity_type,
+        entity_id: input.entity_id,
+        uid: input.uid,
+      } satisfies Prisma.InputJsonValue,
+    });
+
+    return {
+      id: activity.id,
+      entity_type: activity.entityType,
+      entity_id: activity.entityId,
+      kind: activity.kind,
+      title: activity.title,
+      body: activity.body,
+      owner_id: activity.ownerId,
+      due_at: activity.dueAt?.toISOString() ?? null,
+      completed_at: activity.completedAt?.toISOString() ?? null,
+      remind_at: activity.remindAt?.toISOString() ?? null,
+      created_by_id: activity.createdById,
+      created_at: activity.createdAt.toISOString(),
+      updated_at: activity.updatedAt.toISOString(),
+    };
+  }
 }
 
 export class ImapService {
@@ -567,6 +639,95 @@ export class ImapService {
         folder,
         page,
         page_size: pageSize,
+        total,
+        messages: rows.map((message) => {
+          const source = message.source?.toString('utf8') ?? '';
+          const parsed = source
+            ? parseMime(source)
+            : { textParts: [], htmlParts: [], attachments: [] };
+          const text = parsed.textParts.join('\n\n').trim() || null;
+          const html = parsed.htmlParts.join('\n\n').trim() || null;
+          const structureAttachments = collectStructureAttachments(message.bodyStructure);
+
+          return {
+            uid: message.uid,
+            message_id: message.envelope?.messageId ?? null,
+            from: toAddressList(message.envelope?.from),
+            to: toAddressList(message.envelope?.to),
+            subject: message.envelope?.subject ?? null,
+            date: message.envelope?.date ? message.envelope.date.toISOString() : null,
+            flags: [...(message.flags ?? new Set<string>())],
+            has_attachments: structureAttachments.length > 0 || parsed.attachments.length > 0,
+            snippet: createSnippet(text, html),
+          };
+        }),
+      };
+    });
+  }
+
+  async searchMessages(
+    account: EmailAccount,
+    password: string,
+    query: SearchMessagesQuery,
+  ): Promise<MessageListDto> {
+    return this.withClient(account, password, async (client) => {
+      await client.mailboxOpen(query.folder, { readOnly: true });
+
+      const searchResult = await client.search(
+        {
+          or: [{ subject: query.q }, { from: query.q }, { body: query.q }],
+        },
+        { uid: true },
+      );
+      const uids = searchResult || [];
+
+      const total = uids.length;
+      if (total === 0) {
+        return {
+          folder: query.folder,
+          page: query.page,
+          page_size: query.page_size,
+          total: 0,
+          messages: [],
+        };
+      }
+
+      const sorted = [...uids].sort((a, b) => b - a);
+      const start = (query.page - 1) * query.page_size;
+      const pageUids = sorted.slice(start, start + query.page_size);
+
+      if (pageUids.length === 0) {
+        return {
+          folder: query.folder,
+          page: query.page,
+          page_size: query.page_size,
+          total,
+          messages: [],
+        };
+      }
+
+      const uidSet = pageUids.join(',');
+      const rows = [];
+      for await (const message of client.fetch(
+        uidSet,
+        {
+          uid: true,
+          flags: true,
+          envelope: true,
+          bodyStructure: true,
+          source: { start: 0, maxLength: 8192 },
+        },
+        { uid: true },
+      )) {
+        rows.push(message);
+      }
+
+      rows.sort((a, b) => b.uid - a.uid);
+
+      return {
+        folder: query.folder,
+        page: query.page,
+        page_size: query.page_size,
         total,
         messages: rows.map((message) => {
           const source = message.source?.toString('utf8') ?? '';
