@@ -3,9 +3,9 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: **M6 — Post-delivery iteración 1** — UJ-28 ✅ + UJ-29a/b/c ✅ completos. IT-12 pendiente.
-- **Last Completed**: **UJ-29c Mail — search + CRM + drafts** — backend (IMAP SEARCH, to-activity endpoint, 507 tests) + frontend (barra búsqueda debounced, chip contacto CRM, EmailToActivityDialog, autosave borradores localStorage 2s/7d, 147 tests). Commit b5cf19b.
-- **Next Step**: **IT-12** — EasyPanel deploy para `crm.estudioheyday.com` en VPS `46.202.131.13`. `deployment/easypanel/project.yml`. Hardening producción (cookie.secure, CORS crm.estudioheyday.com, logs JSON). Job migraciones + seed base. Cron pg_dump diario 7d retención. Runbook completo.
+- **Phase**: **M6 — Post-delivery iteración 1** — ✅ **COMPLETO**. UJ-28 + UJ-29a/b/c + IT-12 entregados.
+- **Last Completed**: **IT-12 Deploy EasyPanel** — `deployment/easypanel/project.yml` (5 servicios), `backup-postgres.sh` (pg_dump cron 7d), `.env.production.example`, `deployment/docs/runbook.md` (go-live checklist completo), `next.config.mjs` con `output: standalone`. Commit fddddfa.
+- **Next Step**: Subir el repo a GitHub (`git push -u origin main`) y seguir el runbook `deployment/docs/runbook.md` para el deploy en `crm.estudioheyday.com`.
 
 ## Estado verificable
 
@@ -180,7 +180,7 @@ Ver `docs/decision_log.md` (11 decisiones de Planning) y entradas relevantes del
 | UJ-29a Mail — vault + lectura       | ✅ completed |
 | UJ-29b Mail — compose + adjuntos    | ✅ completed |
 | UJ-29c Mail — search + CRM + drafts | ✅ completed |
-| IT-12 Deploy EasyPanel VPS          | ⏳ pending   |
+| IT-12 Deploy EasyPanel VPS          | ✅ completed |
 
 ## Pasos para la siguiente sesión
 
