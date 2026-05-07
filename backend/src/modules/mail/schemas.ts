@@ -1,0 +1,138 @@
+import { z } from 'zod';
+
+const defaultImapHost = 'imap.hostinger.com';
+const defaultImapPort = 993;
+const defaultSmtpHost = 'smtp.hostinger.com';
+const defaultSmtpPort = 465;
+
+const emailAccountWritableFields = {
+  password: z.string().min(1),
+  display_name: z.string().min(1).optional(),
+  imap_host: z.string().min(1).default(defaultImapHost),
+  imap_port: z.number().int().positive().default(defaultImapPort),
+  smtp_host: z.string().min(1).default(defaultSmtpHost),
+  smtp_port: z.number().int().positive().default(defaultSmtpPort),
+  signature_text: z.string().optional(),
+  signature_html: z.string().optional(),
+};
+
+export const CreateEmailAccountInputSchema = z.object({
+  email_address: z.string().email(),
+  ...emailAccountWritableFields,
+});
+
+export const UpdateEmailAccountInputSchema = z.object({
+  password: emailAccountWritableFields.password.optional(),
+  display_name: emailAccountWritableFields.display_name,
+  imap_host: emailAccountWritableFields.imap_host.optional(),
+  imap_port: emailAccountWritableFields.imap_port.optional(),
+  smtp_host: emailAccountWritableFields.smtp_host.optional(),
+  smtp_port: emailAccountWritableFields.smtp_port.optional(),
+  signature_text: emailAccountWritableFields.signature_text,
+  signature_html: emailAccountWritableFields.signature_html,
+});
+
+export const ListMessagesQuerySchema = z.object({
+  folder: z.string().min(1).default('INBOX'),
+  page: z.coerce.number().int().min(1).default(1),
+  page_size: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+export const GetMessageQuerySchema = z.object({
+  folder: z.string().min(1).default('INBOX'),
+});
+
+export const SetFlagsInputSchema = z.object({
+  folder: z.string().min(1),
+  seen: z.boolean().optional(),
+  flagged: z.boolean().optional(),
+});
+
+export const EmailAccountShareDtoSchema = z.object({
+  user_id: z.string(),
+});
+
+export const EmailAccountPublicDtoSchema = z.object({
+  id: z.string(),
+  owner_id: z.string(),
+  email_address: z.string().email(),
+  display_name: z.string().nullable(),
+  imap_host: z.string(),
+  imap_port: z.number().int(),
+  smtp_host: z.string(),
+  smtp_port: z.number().int(),
+  signature_text: z.string().nullable(),
+  signature_html: z.string().nullable(),
+  last_sync_at: z.string().datetime().nullable(),
+  shares: z.array(EmailAccountShareDtoSchema),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+
+export const MessageAddressDtoSchema = z.object({
+  name: z.string().nullable(),
+  address: z.string().nullable(),
+});
+
+export const FolderDtoSchema = z.object({
+  path: z.string(),
+  name: z.string(),
+  delimiter: z.string(),
+  flags: z.array(z.string()),
+});
+
+export const MessageListItemDtoSchema = z.object({
+  uid: z.number().int().positive(),
+  message_id: z.string().nullable(),
+  from: z.array(MessageAddressDtoSchema),
+  to: z.array(MessageAddressDtoSchema),
+  subject: z.string().nullable(),
+  date: z.string().datetime().nullable(),
+  flags: z.array(z.string()),
+  has_attachments: z.boolean(),
+  snippet: z.string(),
+});
+
+export const MessageListDtoSchema = z.object({
+  folder: z.string(),
+  page: z.number().int().min(1),
+  page_size: z.number().int().min(1),
+  total: z.number().int().min(0),
+  messages: z.array(MessageListItemDtoSchema),
+});
+
+export const AttachmentDtoSchema = z.object({
+  part_id: z.string(),
+  filename: z.string().nullable(),
+  size: z.number().int().min(0),
+  content_type: z.string(),
+});
+
+export const MessageDetailDtoSchema = z.object({
+  uid: z.number().int().positive(),
+  message_id: z.string().nullable(),
+  subject: z.string().nullable(),
+  date: z.string().datetime().nullable(),
+  from: z.array(MessageAddressDtoSchema),
+  to: z.array(MessageAddressDtoSchema),
+  cc: z.array(MessageAddressDtoSchema),
+  bcc: z.array(MessageAddressDtoSchema),
+  reply_to: z.array(MessageAddressDtoSchema),
+  flags: z.array(z.string()),
+  text: z.string().nullable(),
+  html: z.string().nullable(),
+  attachments: z.array(AttachmentDtoSchema),
+});
+
+export type CreateEmailAccountInput = z.infer<typeof CreateEmailAccountInputSchema>;
+export type UpdateEmailAccountInput = z.infer<typeof UpdateEmailAccountInputSchema>;
+export type ListMessagesQuery = z.infer<typeof ListMessagesQuerySchema>;
+export type GetMessageQuery = z.infer<typeof GetMessageQuerySchema>;
+export type SetFlagsInput = z.infer<typeof SetFlagsInputSchema>;
+export type EmailAccountPublicDto = z.infer<typeof EmailAccountPublicDtoSchema>;
+export type FolderDto = z.infer<typeof FolderDtoSchema>;
+export type MessageAddressDto = z.infer<typeof MessageAddressDtoSchema>;
+export type MessageListItemDto = z.infer<typeof MessageListItemDtoSchema>;
+export type MessageListDto = z.infer<typeof MessageListDtoSchema>;
+export type AttachmentDto = z.infer<typeof AttachmentDtoSchema>;
+export type MessageDetailDto = z.infer<typeof MessageDetailDtoSchema>;

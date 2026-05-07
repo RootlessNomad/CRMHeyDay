@@ -41,6 +41,7 @@ import { registerImportsRoutes } from './routes/imports.js';
 import { registerIntelRoutes } from './routes/intel.js';
 import { registerJobsRoutes } from './routes/jobs.js';
 import { registerLeadsRoutes } from './routes/leads.js';
+import { registerMailRoutes } from './routes/mail.js';
 import { registerPipelinesRoutes } from './routes/pipelines.js';
 import { registerSearchRoutes } from './routes/search.js';
 import { registerTagsRoutes } from './routes/tags.js';
@@ -130,6 +131,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await registerIntelRoutes(app);
   await registerJobsRoutes(app);
   await registerLeadsRoutes(app);
+  await registerMailRoutes(app);
   await registerPipelinesRoutes(app);
   await registerSearchRoutes(app);
   await registerTagsRoutes(app);

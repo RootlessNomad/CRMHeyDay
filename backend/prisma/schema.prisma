@@ -223,6 +223,8 @@ model User {
   createdActivities       Activity[]                @relation("ActivityCreatedBy")
   calendarEventsOwned     CalendarEvent[]           @relation("CalendarEventOwner")
   calendarEventsCreated   CalendarEvent[]           @relation("CalendarEventCreatedBy")
+  emailAccountsOwned      EmailAccount[]            @relation("EmailAccountOwner")
+  emailAccountShares      EmailAccountShare[]       @relation("EmailAccountShares")
   triggeredEnrichmentRuns EnrichmentRun[]
   verifiedPainPoints      PainPoint[]
   lastGeneratedOutbound   OutboundPrep[]
@@ -751,8 +753,44 @@ model Credential {
 
   createdBy User                 @relation(fields: [createdById], references: [id], onDelete: Restrict)
   health    IntegrationHealth?
+  emailAccount EmailAccount?
 
   @@map("credentials")
+}
+
+model EmailAccount {
+  id            String    @id @default(cuid())
+  ownerId       String    @map("owner_id")
+  emailAddress  String    @unique @map("email_address")
+  displayName   String?   @map("display_name")
+  imapHost      String    @default("imap.hostinger.com") @map("imap_host")
+  imapPort      Int       @default(993) @map("imap_port")
+  smtpHost      String    @default("smtp.hostinger.com") @map("smtp_host")
+  smtpPort      Int       @default(465) @map("smtp_port")
+  credentialId  String    @unique @map("credential_id")
+  signatureText String?   @map("signature_text")
+  signatureHtml String?   @map("signature_html")
+  lastSyncAt    DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  owner      User                @relation("EmailAccountOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  credential Credential          @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  shares     EmailAccountShare[]
+
+  @@map("email_accounts")
+}
+
+model EmailAccountShare {
+  emailAccountId String   @map("email_account_id")
+  userId         String   @map("user_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  emailAccount EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+  user         User         @relation("EmailAccountShares", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([emailAccountId, userId])
+  @@map("email_account_shares")
 }
 
 model IntegrationHealth {
