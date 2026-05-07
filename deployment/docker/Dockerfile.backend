@@ -43,7 +43,8 @@ RUN pnpm --filter @heyday/backend run build
 
 # ============ Prod ============
 FROM node:20-alpine AS prod
-RUN apk add --no-cache tini && corepack enable && corepack prepare pnpm@9.12.0 --activate
+# openssl necesario para que Prisma detecte OpenSSL 3.x y use el engine correcto
+RUN apk add --no-cache tini openssl && corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 ENV NODE_ENV=production
 
