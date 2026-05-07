@@ -115,28 +115,34 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(authPlugin);
   registerErrorHandler(app);
 
-  // ---- Rutas
-  await registerActivitiesRoutes(app);
-  await registerCalendarRoutes(app);
-  await registerAdminRoutes(app);
-  await registerAuthRoutes(app);
-  await registerCompaniesRoutes(app);
-  await registerContentRoutes(app);
-  await registerContactsRoutes(app);
-  await registerCredentialsRoutes(app);
-  await registerDashboardRoutes(app);
-  await registerGdprRoutes(app);
+  // ---- Rutas: /health sin prefijo (healthcheck de EasyPanel), resto bajo /api/v1
   await registerHealthRoutes(app);
-  await registerImportsRoutes(app);
-  await registerIntelRoutes(app);
-  await registerJobsRoutes(app);
-  await registerLeadsRoutes(app);
-  await registerMailRoutes(app);
-  await registerPipelinesRoutes(app);
-  await registerSearchRoutes(app);
-  await registerTagsRoutes(app);
-  await registerTaxonomiesRoutes(app);
-  await registerUsersRoutes(app);
+
+  await app.register(
+    async (v1) => {
+      await registerActivitiesRoutes(v1);
+      await registerCalendarRoutes(v1);
+      await registerAdminRoutes(v1);
+      await registerAuthRoutes(v1);
+      await registerCompaniesRoutes(v1);
+      await registerContentRoutes(v1);
+      await registerContactsRoutes(v1);
+      await registerCredentialsRoutes(v1);
+      await registerDashboardRoutes(v1);
+      await registerGdprRoutes(v1);
+      await registerImportsRoutes(v1);
+      await registerIntelRoutes(v1);
+      await registerJobsRoutes(v1);
+      await registerLeadsRoutes(v1);
+      await registerMailRoutes(v1);
+      await registerPipelinesRoutes(v1);
+      await registerSearchRoutes(v1);
+      await registerTagsRoutes(v1);
+      await registerTaxonomiesRoutes(v1);
+      await registerUsersRoutes(v1);
+    },
+    { prefix: '/api/v1' },
+  );
 
   return app;
 }
