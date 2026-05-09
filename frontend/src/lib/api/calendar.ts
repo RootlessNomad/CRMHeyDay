@@ -164,8 +164,8 @@ function serializeInput(
 export async function listCalendarEvents(
   query: ListCalendarEventsQuery,
 ): Promise<CalendarEventDto[]> {
-  const response = await apiFetch<unknown>(`/calendar/events${buildSearchParams(query)}`);
-  return calendarEventListSchema.parse(response).map(mapCalendarEvent);
+  const response = await apiFetch<{ data: unknown }>(`/calendar/events${buildSearchParams(query)}`);
+  return calendarEventListSchema.parse(response.data).map(mapCalendarEvent);
 }
 
 export async function createCalendarEvent(

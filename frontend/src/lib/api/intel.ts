@@ -150,7 +150,7 @@ export async function createEnrichmentRun(body: {
 }): Promise<CreateEnrichmentRunResponse> {
   return apiFetch<CreateEnrichmentRunResponse>('/intel/enrichment-runs', {
     method: 'POST',
-    json: body,
+    json: { companyId: body.company_id, inputUrl: body.input_url },
   });
 }
 
