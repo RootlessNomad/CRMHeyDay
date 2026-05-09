@@ -10,7 +10,11 @@
 
 import { getAccessToken, useAuthStore } from '../auth/store';
 
-const RAW_BASE = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001';
+// En producción se recomienda set NEXT_PUBLIC_API_URL=https://tudominio.com/api/v1
+// Si no está definida, se usa '/api/v1' (relativa al origen) — funciona cuando
+// frontend y backend comparten dominio (ej. crm.estudioheyday.com).
+// En desarrollo, .env.local sobreescribe con http://localhost:3001.
+const RAW_BASE = process.env['NEXT_PUBLIC_API_URL'] ?? '/api/v1';
 // Sin barra final para concatenar paths sin ambigüedad.
 const API_BASE = RAW_BASE.replace(/\/$/, '');
 
