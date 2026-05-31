@@ -63,6 +63,11 @@ yarn-error.log*
 # Docker
 docker-compose.override.yml
 
+# EasyPanel — el project.yml versionado lleva placeholders <CAMBIAR_*>; la copia
+# rellenada con secretos reales NO se versiona (se importa a EasyPanel y se queda local).
+deployment/easypanel/*.local.yml
+deployment/easypanel/project.yml.zip
+
 # Testing
 coverage/
 .coverage

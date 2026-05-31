@@ -272,6 +272,7 @@ function makeCompany(input: { id: string; name: string; domain?: string | null }
     linkedinUrl: null,
     instagramHandle: null,
     notes: null,
+    demoLink: null,
     createdById: 'user_admin',
     createdAt: now,
     updatedAt: now,

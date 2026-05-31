@@ -46,6 +46,7 @@ function toDto(row: Company): CompanyDto {
     linkedin_url: row.linkedinUrl,
     instagram_handle: row.instagramHandle,
     notes: row.notes,
+    demo_link: row.demoLink,
     created_by_id: row.createdById,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
@@ -79,6 +80,7 @@ function toCreateData(
     linkedinUrl: input.linkedin_url ?? null,
     instagramHandle: input.instagram_handle ?? null,
     notes: input.notes ?? null,
+    demoLink: input.demo_link ?? null,
     createdBy: { connect: { id: createdById } },
   };
 }
@@ -105,6 +107,7 @@ function toUpdateData(
   if (patch.linkedin_url !== undefined) data.linkedinUrl = patch.linkedin_url;
   if (patch.instagram_handle !== undefined) data.instagramHandle = patch.instagram_handle;
   if (patch.notes !== undefined) data.notes = patch.notes;
+  if (patch.demo_link !== undefined) data.demoLink = patch.demo_link;
   return data;
 }
 

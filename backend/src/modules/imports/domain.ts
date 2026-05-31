@@ -21,6 +21,7 @@ const ACCEPTED_HEADERS = new Set([
   'linkedin_url',
   'instagram_handle',
   'notes',
+  'demo_link',
 ] as const);
 
 export type ParsedRow = {

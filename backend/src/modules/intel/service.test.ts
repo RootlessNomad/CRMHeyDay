@@ -49,6 +49,7 @@ function makeCompany(overrides: Partial<Company> = {}): Company {
     linkedinUrl: null,
     instagramHandle: null,
     notes: null,
+    demoLink: null,
     createdById: 'user_1',
     createdAt: now,
     updatedAt: now,

@@ -136,6 +136,10 @@ services:
       env: |
         NODE_ENV=production
         PORT=3000
+        # Next.js standalone en Docker/Swarm: forzar bind a todas las interfaces.
+        # Sin esto, Docker fija HOSTNAME=<id-contenedor> y Next enlaza solo a esa
+        # interfaz → el proxy no lo alcanza al recrear el contenedor → 502.
+        HOSTNAME=0.0.0.0
         NEXT_PUBLIC_API_URL=https://crm.estudioheyday.com/api/v1
         NEXT_PUBLIC_APP_NAME=HeyDay CRM
         TZ=Europe/Madrid

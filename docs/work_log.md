@@ -2,6 +2,33 @@
 
 Chronological record of all meaningful work. Each entry covers one infrastructure task, user journey, or significant change.
 
+## Incidente PROD — 2026-05-31: frontend 502 (`crm.estudioheyday.com`)
+
+**Síntoma:** todas las páginas devolvían 502 ("Service is not reachable" de EasyPanel). Backend, DB,
+Redis y enrutado `/api` sanos (verificado: la API respondía JSON correcto).
+
+**Causa raíz:** el contenedor `heyday-frontend` (Next.js 15 standalone, Docker Swarm) se recreó ~13 min
+antes; Docker fija `HOSTNAME=<id-contenedor>` y el `server.js` de Next enlaza SOLO a esa interfaz
+(`Local: http://<id>:3000`), no a `0.0.0.0`. Tras recrearse con un id/IP nuevos, el contenedor quedó
+escuchando en una interfaz que el proxy de Swarm no alcanzaba → 502. Confirmado: `wget http://$(hostname):3000`
+OK pero `wget http://127.0.0.1:3000` fallaba. (No fue OOM/disco: host con 6 GB RAM libres, disco 18%.)
+
+**Diagnóstico/fix (vía SSH al VPS 46.202.131.13, autorizado por el usuario):**
+
+- `docker service update --env-add HOSTNAME=0.0.0.0 --update-order start-first heyday_heyday-frontend`.
+- Tras converger: Next enlaza `0.0.0.0:3000`, loopback OK; público `/`→307 (redirect a /login), `/login`→200.
+- Persistencia en el repo: añadido `HOSTNAME=0.0.0.0` al env del servicio frontend en
+  `deployment/easypanel/project.yml` (placeholders, versionado) y en `project.local.yml` (local).
+
+**Pendiente del usuario (persistencia real):** EasyPanel guarda su propia config (no relee `project.yml`).
+El `service update` aguanta hasta el próximo redeploy iniciado DESDE EasyPanel. Para que no reaparezca:
+**EasyPanel → heyday-frontend → Environment → añadir `HOSTNAME=0.0.0.0` → Deploy.**
+
+**Nota seguridad:** falsa alarma previa de "fuga de secretos" — el `project.yml` público tiene placeholders
+`<CAMBIAR_*>`; los valores reales solo estaban en la copia local (ahora en `project.local.yml`, gitignored).
+Clave SSH de este equipo añadida a `root@VPS` para el arreglo; revocar con: quitar la línea
+`...your-email@example.com` de `/root/.ssh/authorized_keys` cuando se desee.
+
 ## Format
 
 ### [Date] — [ID]: [Task/Journey Name]
@@ -1132,3 +1159,160 @@ Petición del usuario tras delivery: (a) CRM en blanco para clientes reales, (b)
 
 - `act()` warnings en tests del dialog (async mutations no envueltas) — mismo patrón pendiente que LeadFormDialog. Polish trivial.
 - Migración `add_calendar_events` generada manualmente por Codex; se aplica en el próximo `prisma migrate dev` (IT-12 o local).
+
+---
+
+## M7 — Cadena de outreach (gimnasios/clínicas)
+
+Plan completo: `~/.claude/plans/plan-cadena-swirling-cake.md`. Objetivo: empezar a enviar correos en frío
+(rediseño web/SEO/landings) a gimnasios y clínicas, apoyándose en el CRM (research + `OutboundPrep` +
+tracking) más una app pública de demos y plantillas de email.
+
+### UJ-30 — Campo `demo_link` por empresa
+
+**Implementación (Claude, directa):**
+
+- `backend/prisma/schema.prisma`: `Company.demoLink String? @map("demo_link")`. `prisma generate` ✓.
+- Migración `backend/prisma/migrations/20260531193000_add_demo_link/migration.sql` escrita a mano
+  (`ALTER TABLE "companies" ADD COLUMN "demo_link" TEXT;`) — Docker no estaba arriba; pendiente
+  `prisma migrate deploy` (mismo patrón de deuda que UJ-28/29).
+- `backend/src/modules/companies/schemas.ts`: `demo_link` (`z.string().url().nullable().optional()`) en
+  writable fields + `CompanyDtoSchema`.
+- `backend/src/modules/companies/service.ts`: `demo_link` en `toDto`/`toCreateData`/`toUpdateData`.
+- `backend/src/modules/imports/domain.ts`: `demo_link` añadido a `ACCEPTED_HEADERS` (import CSV opcional).
+- Fixtures de test actualizados (Company/DTO) en activities, calendar, companies, contacts, leads, search,
+  tags, intel, routes/companies — `demoLink`/`demo_link` null.
+- Frontend: `types/company.ts` (`CompanyDto` + `CompanyCreateInput`); `CompanyFormDialog.tsx` campo
+  "Demo (URL)" en sección "Más datos" (estado + Zod `.url()` + sanitize); ficha de empresa
+  `companies/[id]/page.tsx` muestra `demo_link` como enlace http(s) seguro (`safeHttpUrl` contra
+  `javascript:`); `OutboundPrepCard.tsx` muestra bloque "Demo" con enlace + botón Copiar (reusa la query
+  cacheada `['companies', id]`, sin red extra en la ficha).
+
+**Verificación independiente (Claude):** backend `tsc --noEmit` ✓, frontend `tsc --noEmit` ✓, lint ✓ en
+archivos tocados, tests verdes (companies 9 + imports 12 + routes/companies 7 backend; CompanyFormDialog 4
+frontend).
+
+**Security checklist UJ-30:** ✅ sin secretos; `demo_link` validado como URL (Zod backend + frontend);
+render con `safeHttpUrl` (bloquea `javascript:`/otros schemes); pasa por rutas companies con `requireAuth`;
+sin leaks en DTO.
+
+**Deuda UJ-30:** migración `add_demo_link` generada sin Postgres; aplicar/validar con `prisma migrate dev`
+o `migrate deploy` cuando Docker esté arriba (junto a la deuda acumulada de UJ-28/29 e IT-12).
+
+### UJ-31 — Descubrimiento en masa (Google Places)
+
+**Implementación (Claude, directa — desviación consciente del patrón Codex, justificada por anclas ya
+exploradas + supervisión activa del usuario):**
+
+- `backend/src/core/sources/google-places.ts`: adaptador Places API v1 `places:searchText` con FieldMask
+  (id, displayName, websiteUri, internationalPhoneNumber, googleMapsUri, rating, userRatingCount,
+  formattedAddress, addressComponents), paginación por `nextPageToken` (máx 3 páginas / 60 resultados),
+  dedup por `placeId`, extracción de `locality`. API key recibida por parámetro (nunca env/logs);
+  `GooglePlacesError` no filtra body ni key.
+- Cola `discovery`: `DiscoveryPayloadSchema` + `QUEUE_NAMES`/`QUEUE_SCHEMAS`/`PayloadForQueue` en
+  `core/queue/types.ts`, mapa en `core/queue/queues.ts`, handler en `worker/main.ts`.
+- `backend/src/modules/discovery/{schemas,service,handler,index}.ts`: `mapBusinessTypeToVertical`
+  (gimnasio→`gym_fitness`, fisio/pilates/yoga/bakery/cafe, default `other`); `DiscoveryService.run`
+  reutiliza `CompaniesService.create` (dedup por dominio → `CompanyDomainConflictError`=duplicada) +
+  dedup secundario (nombre+ciudad o teléfono) para negocios sin web; enrichment solo si `triggerEnrichment`
+  y la empresa tiene web, vía `intelService.createEnrichmentRun`. `enqueueBulkDiscovery` para la ruta.
+- `backend/src/api/routes/discovery.ts`: `POST /discovery/bulk-search` con `requireAuth + requireRole('admin')`,
+  rateLimit 5/min por usuario, Zod, 202 `{ jobId }`. Registrada en `api/server.ts` bajo `/api/v1`.
+- Frontend: `lib/api/discovery.ts` (`bulkDiscoverySearch`), `BulkDiscoveryDialog` (ciudad + tipo + checkbox
+  enriquecer), `BulkDiscoveryStatus` (polling `getJob` cada 4s, muestra creadas/duplicadas/enriquecidas,
+  invalida `['companies']` al terminar), botón "Descubrir negocios" en `/companies`.
+
+**Verificación independiente (Claude):** backend `tsc` ✓, frontend `tsc` ✓, lint ✓ en archivos tocados;
+tests: 8 nuevos (4 adapter con `fetch` mockeado: mapeo/paginación/dedup/error; 4 service con deps
+inyectadas: create+vertical, dedup nombre/ciudad, dedup dominio, enrichment solo-con-web) + queue (4) +
+intel service (33) + companies route (7) verdes.
+
+**Security checklist UJ-31:** ✅ key `google_places` solo del vault (`secretsResolver`), nunca en payload/log;
+Zod en la ruta; rateLimit + gate admin (API de pago); `GooglePlacesError` sin filtrar body/key; payload de
+cola sin secretos (solo ids/flags); dedup evita duplicados al re-ejecutar.
+
+**Deuda UJ-31:** verificación end-to-end real requiere cargar la key `google_places` en el vault
+(`/admin/settings`) + Docker (db/redis/worker). El `[ioredis] ECONNREFUSED` en el test del service es inocuo
+(conexión perezosa en entorno de test, mismo patrón que otros módulos que importan `enqueue`).
+
+### UJ-32 — App pública de demos (`heyday-demos`, repo aparte)
+
+**Repo nuevo** `/Users/alex_avila/Documents/CRM/heyday-demos` (independiente del CRM, público, sin auth).
+Next.js 16.2.6 + React 19 + Tailwind v4 (CSS-first via `@tailwindcss/postcss`). `git init` + commit inicial.
+
+- **Arquitectura plantilla + config por prospecto**: `src/types/prospect.ts` (`ProspectConfig`),
+  `src/prospects/_template.ts` (base a clonar), `src/prospects/iron-pulse.ts` (demo real de ejemplo),
+  `src/prospects/index.ts` (registro slug→config para `generateStaticParams`). Ruta dinámica
+  `src/app/[slug]/page.tsx` (SSG + `generateMetadata` noindex + `notFound`). Índice interno en `/`.
+- **9 componentes** server-side en `src/components/`: Navbar (sticky + CTA), Hero (imagen + doble CTA),
+  Servicios, Beneficios, Planes (placeholder tarifas), HorariosUbicacion (link maps), Testimonios
+  (reseñas reales), CtaFooter (firma "Diseñado por HeyDay Studio"), WhatsAppFloat (+34 649 756 007).
+- **Acento por prospecto**: `colorPrimario` se inyecta como `--accent` en el `<main>`; toda la paleta se
+  adapta sin tocar componentes. Tema oscuro premium fitness, entrada CSS-only (`.reveal`, respeta
+  `prefers-reduced-motion`). Imágenes Unsplash (`next.config` remotePatterns). Helper `lib/whatsapp.ts`.
+
+**Verificación independiente (Claude):** `tsc --noEmit` ✓; `next build` ✓ (compila + SSG de `/iron-pulse`);
+preview MCP: home + demo en **desktop y móvil** (375px), snapshot a11y confirma todas las secciones y textos,
+`preview_eval` confirma `--accent=#ff5a1f`, **7 enlaces `wa.me/34649756007`** con texto prerelleno, link de
+maps y firma HeyDay. Navbar colapsa en móvil; cards apilan; WhatsApp flotante presente.
+
+**Deuda UJ-32:** deploy en Vercel + dominio `demos.estudioheyday.com` (CNAME) — paso operativo del usuario.
+Sustituir `iron-pulse` por gimnasios reales del CRM al enviar (copiar `_template.ts`).
+
+### UJ-33 — Plantillas de email en frío + flujo de tracking
+
+`heyday-demos/emails/`: `email-1-gimnasio.md` (día 0, ángulo imagen online + demo hecho),
+`email-2-followup.md` (+3d, ángulo SEO/Google local), `email-3-breakup.md` (+7d, cierre cordial),
+`email-1-clinica.md` (variante confianza) + `README.md` con variables, origen CRM y entregabilidad.
+
+- **Variables**: `{{nombre}}`, `{{negocio}}`, `{{ciudad}}`, `{{link_demo}}`, `{{observacion_personal}}`.
+- **El CRM aporta la munición**: `OutboundPrep` (`outreach_angle`/`service_pitch`/`tone_guidance`) + `demo_link`
+  - `PainPoint` para la observación personal.
+- **Tracking sin schema nuevo** (verificado contra el código): registrar **Activity `kind='email_log'`**
+  (`ActivityKind` ∈ {note, task, call_log, **email_log**, meeting_log}) sobre company/contact/lead, y mover
+  el Lead en el Kanban (nuevo→demo hecho→contactado→seguimiento→respondido).
+
+**Verificación:** confirmado que `email_log` existe en `backend/src/modules/activities/schemas.ts`
+(`ActivityKindSchema`) — el flujo documentado no inventa tipos.
+
+**Nota de proceso (Partes 1/3/4):** implementación directa de Claude en lugar del patrón Codex —
+desviación consciente (Regla 9) justificada por anclas ya exploradas, alcance acotado y supervisión activa
+del usuario; compensada con verificación independiente (typecheck/lint/build/tests/preview) en cada pasada.
+
+## Review — M7 (cadena de outreach: UJ-31 / UJ-32 / UJ-33)
+
+Revisión independiente (subagente con contexto limpio, escéptico, leyendo el código real y corriendo los
+comandos de verificación). **Veredicto: GO para M7.** Sin hallazgos CRITICAL ni MAJOR.
+
+**Comandos (todos PASS):** backend `tsc` ✓; backend `vitest run src/modules/discovery src/core/sources`
+✓ (8/8); frontend `tsc` ✓; eslint backend+frontend de los archivos tocados ✓; `heyday-demos` `tsc` ✓ y
+`pnpm build` ✓ (SSG `/iron-pulse`).
+
+**Por journey:**
+
+- **UJ-31** GO — ruta con `requireAuth`+`requireRole('admin')`+rateLimit+Zod+202; registrada bajo `/api/v1`;
+  key del vault solo en header `X-Goog-Api-Key`, nunca en payload/log/error; `GooglePlacesError` no filtra
+  body ni key; cola completa (NAMES/SCHEMAS/PayloadForQueue/buildQueue/worker); dedup con `deletedAt:null` +
+  `OR` correcto + nombre/ciudad case-insensitive; fan-out acotado (enrichment solo con web, máx 60); sin
+  riesgo de inyección (POST JSON + Prisma parametrizado); journey frontend completo (in-flight/success/
+  failed/dismiss).
+- **UJ-32** GO — build + typecheck limpios; `[slug]` con `notFound` + `generateStaticParams`; acento por
+  `--accent`; `robots noindex` en slug y layout; app pública sin auth/secrets/`process.env`; WhatsApp links
+  bien formados; **cero `dangerouslySetInnerHTML`** (JSX auto-escapado, sin superficie XSS).
+- **UJ-33** GO — 4 plantillas + README; variables correctas; `email_log` verificado como miembro real de
+  `ActivityKindSchema` (no inventado).
+
+**Hallazgos MINOR/NIT:**
+
+1. _(RESUELTO en esta sesión)_ El botón "Descubrir negocios" se mostraba a todo usuario autenticado (el
+   backend ya bloqueaba con 403). Gateado en frontend con `currentUser?.role === 'admin'` siguiendo el
+   patrón de `Sidebar.tsx`/`CalendarEventDialog.tsx`. typecheck+lint verdes.
+2. Dedup por teléfono usa `equals` exacto sin normalización — fiable al re-ejecutar la misma discovery;
+   endurecer a futuro (normalizar teléfono). No es bug.
+3. Ruido `ioredis ECONNREFUSED` en el test del service (sin Redis) — cosmético, tests pasan con mocks.
+4. Deuda operativa documentada (no regresión): aplicar migración `add_demo_link` con Docker; cargar key
+   `google_places` en vault; deploy `heyday-demos` en Vercel + `demos.estudioheyday.com`.
+
+**Checklist de seguridad:** sin secretos hardcodeados; key solo del vault y solo en header; nada sensible en
+logs/errores/UI; inputs validados y acotados en ruta+payload; auth+admin+rateLimit en la ruta protegida;
+Prisma parametrizado; sin superficie XSS en las demos; errores solo exponen status HTTP; deps estándar.

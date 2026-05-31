@@ -10,6 +10,7 @@ import { z } from 'zod';
 // ------------------------------------------------------------------
 export const QUEUE_NAMES = {
   enrichment: 'enrichment',
+  discovery: 'discovery',
   contentIdea: 'content_idea',
   contentGeneration: 'content_generation',
   contentAdapt: 'content_adapt',
@@ -32,6 +33,20 @@ export const EnrichmentPayloadSchema = z.object({
   actorUserId: z.string().min(1).optional(),
 });
 export type EnrichmentPayload = z.infer<typeof EnrichmentPayloadSchema>;
+
+/**
+ * Descubrimiento en masa (UJ-31): buscar negocios de una ciudad/tipo en Google
+ * Places y crear `Company` por cada uno (dedup por dominio + nombre/ciudad).
+ * La API key NO viaja en el payload — el worker la resuelve via `secretsResolver`.
+ */
+export const DiscoveryPayloadSchema = z.object({
+  city: z.string().min(1).max(120),
+  businessType: z.string().min(1).max(120),
+  maxResults: z.number().int().min(1).max(60).default(20),
+  triggerEnrichment: z.boolean().default(false),
+  actorUserId: z.string().min(1),
+});
+export type DiscoveryPayload = z.infer<typeof DiscoveryPayloadSchema>;
 
 export const ContentIdeaPayloadSchema = z.object({
   pillarId: z.string().min(1),
@@ -81,6 +96,7 @@ export type IntegrationTestPayload = z.infer<typeof IntegrationTestPayloadSchema
 // ------------------------------------------------------------------
 export const QUEUE_SCHEMAS = {
   [QUEUE_NAMES.enrichment]: EnrichmentPayloadSchema,
+  [QUEUE_NAMES.discovery]: DiscoveryPayloadSchema,
   [QUEUE_NAMES.contentIdea]: ContentIdeaPayloadSchema,
   [QUEUE_NAMES.contentGeneration]: ContentGenerationPayloadSchema,
   [QUEUE_NAMES.contentAdapt]: ContentAdaptPayloadSchema,
@@ -89,6 +105,7 @@ export const QUEUE_SCHEMAS = {
 
 export type PayloadForQueue = {
   [QUEUE_NAMES.enrichment]: EnrichmentPayload;
+  [QUEUE_NAMES.discovery]: DiscoveryPayload;
   [QUEUE_NAMES.contentIdea]: ContentIdeaPayload;
   [QUEUE_NAMES.contentGeneration]: ContentGenerationPayload;
   [QUEUE_NAMES.contentAdapt]: ContentAdaptPayload;

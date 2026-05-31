@@ -68,7 +68,7 @@ function formatValue(
   value: CompanyDto[keyof CompanyDto],
 ): JSX.Element | string {
   if (value === null || value === '') return '—';
-  if (field === 'website' || field === 'linkedin_url') {
+  if (field === 'website' || field === 'linkedin_url' || field === 'demo_link') {
     const safe = safeHttpUrl(String(value));
     if (!safe) return String(value); // muestra texto plano si el scheme no es http(s)
     return (
@@ -230,6 +230,7 @@ export default function CompanyDetailPage(): JSX.Element {
     { label: 'WhatsApp', field: 'whatsapp' },
     { label: 'LinkedIn', field: 'linkedin_url' },
     { label: 'Instagram', field: 'instagram_handle' },
+    { label: 'Demo', field: 'demo_link', wide: true },
     { label: 'Creada por', field: 'created_by_id' },
     { label: 'Creada', field: 'created_at' },
     { label: 'Actualizada', field: 'updated_at' },

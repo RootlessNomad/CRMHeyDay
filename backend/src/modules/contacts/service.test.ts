@@ -215,6 +215,7 @@ function makeCompany(
     linkedinUrl: input.linkedinUrl ?? null,
     instagramHandle: input.instagramHandle ?? null,
     notes: input.notes ?? null,
+    demoLink: input.demoLink ?? null,
     createdById: input.createdById,
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,

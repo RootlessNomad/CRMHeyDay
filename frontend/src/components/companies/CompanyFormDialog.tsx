@@ -44,6 +44,7 @@ interface CompanyFormState {
   whatsapp: string;
   linkedin_url: string;
   instagram_handle: string;
+  demo_link: string;
 }
 
 type CompanyField = keyof CompanyFormState;
@@ -80,6 +81,7 @@ const CompanySchema = z.object({
   whatsapp: z.string().max(50, { message: 'Máximo 50 caracteres' }).nullable(),
   linkedin_url: z.string().url({ message: 'URL inválida' }).nullable(),
   instagram_handle: z.string().max(100, { message: 'Máximo 100 caracteres' }).nullable(),
+  demo_link: z.string().url({ message: 'URL inválida' }).nullable(),
 });
 
 const VERTICAL_LABELS: Record<IcpVertical, string> = {
@@ -119,6 +121,7 @@ function emptyState(): CompanyFormState {
     whatsapp: '',
     linkedin_url: '',
     instagram_handle: '',
+    demo_link: '',
   };
 }
 
@@ -141,6 +144,7 @@ function stateFromInitialValues(initialValues?: Partial<CompanyDto> | null): Com
     whatsapp: initialValues?.whatsapp ?? '',
     linkedin_url: initialValues?.linkedin_url ?? '',
     instagram_handle: initialValues?.instagram_handle ?? '',
+    demo_link: initialValues?.demo_link ?? '',
   };
 }
 
@@ -168,6 +172,7 @@ function sanitizePayload(state: CompanyFormState): CompanyCreateInput {
     whatsapp: normalizeNullable(state.whatsapp),
     linkedin_url: normalizeNullable(state.linkedin_url),
     instagram_handle: normalizeNullable(state.instagram_handle),
+    demo_link: normalizeNullable(state.demo_link),
   };
 }
 
@@ -400,6 +405,7 @@ export function CompanyFormDialog({
                 ['whatsapp', 'WhatsApp'],
                 ['linkedin_url', 'LinkedIn URL'],
                 ['instagram_handle', 'Instagram'],
+                ['demo_link', 'Demo (URL)'],
               ].map(([field, label]) => (
                 <div key={field} className="space-y-1.5">
                   <label htmlFor={`company-${field}`} className="block text-sm font-medium">

@@ -3,9 +3,11 @@
 ## Current State
 
 - **Project**: HeyDay CRM + Lead Intelligence + Content Engine
-- **Phase**: **M6 — Post-delivery iteración 1** — ✅ **COMPLETO**. UJ-28 + UJ-29a/b/c + IT-12 entregados.
-- **Last Completed**: **IT-12 Deploy EasyPanel** — `deployment/easypanel/project.yml` (5 servicios), `backup-postgres.sh` (pg_dump cron 7d), `.env.production.example`, `deployment/docs/runbook.md` (go-live checklist completo), `next.config.mjs` con `output: standalone`. Commit fddddfa.
-- **Next Step**: Subir el repo a GitHub (`git push -u origin main`) y seguir el runbook `deployment/docs/runbook.md` para el deploy en `crm.estudioheyday.com`.
+- **Phase**: **M7 — Cadena de outreach (gimnasios/clínicas)** — en curso. Plan: `~/.claude/plans/plan-cadena-swirling-cake.md`. Objetivo: enviar correos en frío apoyándose en el CRM + app de demos + plantillas.
+- **Last Completed**: **UJ-32 + UJ-33** — app pública `heyday-demos` (repo nuevo en `/Users/alex_avila/Documents/CRM/heyday-demos`, Next.js 16 + Tailwind v4, plantilla+config por prospecto, demo real `iron-pulse`, verificado build + preview desktop/móvil; `git init`+commit) y plantillas de email en frío (`emails/`: gimnasio + 2 seguimientos + clínica) con flujo de tracking Activity `email_log` + Kanban. **Toda la cadena de outreach (Partes 1–4) implementada.**
+- **M7 revisado**: `/review` independiente → **GO** (sin CRITICAL/MAJOR). Nit resuelto: botón "Descubrir negocios" gateado a admin en frontend. Detalle en `work_log.md` → "## Review — M7".
+- **heyday-demos desplegado en Vercel** (cuenta `rootlessnomad`, scope `alexs-projects-02366dd8`, project `heyday-demos` `prj_kH30lRdsBI8KuLjpQovuj0fSAktb`): producción en `https://heyday-demos.vercel.app` (demo: `/iron-pulse`, verificado 200 + 404 en slug desconocido). Dominio `demos.estudioheyday.com` añadido al proyecto, **pendiente solo el registro DNS** (CNAME `demos`→`cname.vercel-dns.com`, o A `demos`→`76.76.21.21`); NS actuales en `dns-parking.com`. Repo git: `github.com/RootlessNomad/heyday-demos` (privado, branch `main`) **conectado a Vercel** → cada push a `main` auto-despliega a producción.
+- **Next Step**: **Pasos operativos del usuario** (no-código): (1) añadir el registro DNS de `demos` en el registrar → Vercel verifica solo; (2) cargar key `google_places` en el vault `/admin/settings`; (3) Docker arriba → aplicar migraciones pendientes (`add_demo_link` + deuda UJ-28/29, IT-12) y verificar discovery/`demo_link` end-to-end; (4) sustituir demo `iron-pulse` por gimnasios reales (`cp _template.ts <slug>.ts` → push); opcional: crear repo remoto y conectar git a Vercel para auto-deploy.
 
 ## Estado verificable
 
@@ -181,6 +183,21 @@ Ver `docs/decision_log.md` (11 decisiones de Planning) y entradas relevantes del
 | UJ-29b Mail — compose + adjuntos    | ✅ completed |
 | UJ-29c Mail — search + CRM + drafts | ✅ completed |
 | IT-12 Deploy EasyPanel VPS          | ✅ completed |
+
+## Progreso M7 — Cadena de outreach
+
+| Entregable                                                          | Estado       |
+| ------------------------------------------------------------------- | ------------ |
+| UJ-30 `demo_link` por empresa                                       | ✅ completed |
+| UJ-31 Discovery Google Places                                       | ✅ completed |
+| UJ-32 App pública de demos                                          | ✅ completed |
+| UJ-33 Plantillas email en frío                                      | ✅ completed |
+| App `heyday-demos` (`/Users/alex_avila/Documents/CRM/heyday-demos`) | ⏳ pendiente |
+| Plantillas email en frío                                            | ⏳ pendiente |
+
+**Deuda UJ-30:** migración `20260531193000_add_demo_link` escrita a mano sin Postgres; aplicar con
+`prisma migrate deploy`/`migrate dev` cuando Docker esté arriba (junto a deuda `add_contact_anonymized_at`,
+`add_calendar_events`, `add_email_accounts`).
 
 ## Pasos para la siguiente sesión
 

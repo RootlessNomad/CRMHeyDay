@@ -299,6 +299,7 @@ model Company {
   linkedinUrl     String?            @map("linkedin_url")
   instagramHandle String?            @map("instagram_handle")
   notes           String?
+  demoLink        String?            @map("demo_link")
   createdById     String             @map("created_by_id")
   createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
+import { getCompany } from '@/lib/api/companies';
 import {
   createOutreachTask,
   getOutboundPrep,
@@ -11,6 +12,17 @@ import {
   type OutboundPrepDto,
   updateOutboundPrep,
 } from '@/lib/api/intel';
+
+// Defensa contra `javascript:` u otros schemes peligrosos: sólo http(s) navegable.
+function safeHttpUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    if (url.protocol === 'http:' || url.protocol === 'https:') return url.toString();
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 type EditableOutboundField = keyof Pick<
   OutboundPrepDto,
@@ -134,6 +146,23 @@ export function OutboundPrepCard({ companyId }: { companyId: string }): JSX.Elem
     queryFn: () => getOutboundPrep(normalizedCompanyId),
     enabled: normalizedCompanyId.length > 0,
   });
+
+  // El demo_link vive en Company; reutiliza la query cacheada por la ficha de empresa.
+  const companyQuery = useQuery({
+    queryKey: ['companies', normalizedCompanyId],
+    queryFn: () => getCompany(normalizedCompanyId),
+    enabled: normalizedCompanyId.length > 0,
+  });
+  const demoLink = companyQuery.data?.demo_link ? safeHttpUrl(companyQuery.data.demo_link) : null;
+
+  async function handleCopyDemoLink(link: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.success('Demo copiado');
+    } catch {
+      toast.error('No se pudo copiar el enlace.');
+    }
+  }
 
   useEffect(() => {
     if (!outboundPrepQuery.data) {
@@ -299,6 +328,26 @@ export function OutboundPrepCard({ companyId }: { companyId: string }): JSX.Elem
             </button>
           </div>
         </div>
+        {demoLink ? (
+          <div className="border-border mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
+            <span className="text-text-muted text-xs uppercase tracking-[0.14em]">Demo</span>
+            <a
+              href={demoLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="break-all text-sm underline underline-offset-4"
+            >
+              {demoLink}
+            </a>
+            <button
+              type="button"
+              onClick={() => void handleCopyDemoLink(demoLink)}
+              className="border-border bg-surface-muted hover:bg-bg rounded-md border px-3 py-1.5 text-xs font-medium transition"
+            >
+              Copiar
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div className="border-border bg-surface rounded-2xl border p-5 shadow-sm">

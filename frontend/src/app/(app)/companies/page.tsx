@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { BulkDiscoveryDialog } from '@/components/companies/BulkDiscoveryDialog';
+import { BulkDiscoveryStatus } from '@/components/companies/BulkDiscoveryStatus';
 import { CompanyFormDialog } from '@/components/companies/CompanyFormDialog';
 import { ImportCompaniesDialog } from '@/components/imports/ImportCompaniesDialog';
 import { usePersistedFilters } from '@/hooks/usePersistedFilters';
@@ -73,6 +75,7 @@ export default function CompaniesPage(): JSX.Element {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
+  const isAdmin = currentUser?.role === 'admin';
   const { saveFilters, loadFilters, clearFilters } = usePersistedFilters(
     'companies',
     currentUser?.id,
@@ -80,6 +83,8 @@ export default function CompaniesPage(): JSX.Element {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [discoveryOpen, setDiscoveryOpen] = useState(false);
+  const [discoveryJobId, setDiscoveryJobId] = useState<string | null>(null);
   const [qInput, setQInput] = useState(searchParams.get('q') ?? '');
   const [cityInput, setCityInput] = useState(searchParams.get('city') ?? '');
   const restoredFiltersRef = useRef(false);
@@ -177,6 +182,15 @@ export default function CompaniesPage(): JSX.Element {
         </div>
 
         <div className="flex flex-wrap gap-3">
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={() => setDiscoveryOpen(true)}
+              className="border-border bg-surface-muted hover:bg-bg h-10 rounded-md border px-4 text-sm font-medium transition"
+            >
+              Descubrir negocios
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setImportOpen(true)}
@@ -201,6 +215,10 @@ export default function CompaniesPage(): JSX.Element {
           </button>
         </div>
       </div>
+
+      {discoveryJobId ? (
+        <BulkDiscoveryStatus jobId={discoveryJobId} onDismiss={() => setDiscoveryJobId(null)} />
+      ) : null}
 
       <div className="border-border bg-surface rounded-lg border p-5 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
@@ -404,6 +422,11 @@ export default function CompaniesPage(): JSX.Element {
           setImportOpen(false);
           return queryClient.invalidateQueries({ queryKey: ['companies'] });
         }}
+      />
+      <BulkDiscoveryDialog
+        open={discoveryOpen}
+        onClose={() => setDiscoveryOpen(false)}
+        onJobCreated={(jobId) => setDiscoveryJobId(jobId)}
       />
     </div>
   );

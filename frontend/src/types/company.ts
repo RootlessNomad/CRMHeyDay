@@ -22,6 +22,7 @@ export interface CompanyDto {
   linkedin_url: string | null;
   instagram_handle: string | null;
   notes: string | null;
+  demo_link: string | null;
   created_by_id: string;
   created_at: string;
   updated_at: string;
@@ -61,6 +62,7 @@ export interface CompanyCreateInput {
   linkedin_url?: string | null;
   instagram_handle?: string | null;
   notes?: string | null;
+  demo_link?: string | null;
 }
 
 export type CompanyUpdateInput = Partial<CompanyCreateInput>;

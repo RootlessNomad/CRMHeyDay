@@ -31,6 +31,7 @@ const companyWritableFields = {
   linkedin_url: nullableUrlSchema.optional(),
   instagram_handle: z.string().max(100).nullable().optional(),
   notes: z.string().max(5000).nullable().optional(),
+  demo_link: nullableUrlSchema.optional(),
 };
 
 export const CompanyCreateSchema = z.object(companyWritableFields);
@@ -74,6 +75,7 @@ export const CompanyDtoSchema = z.object({
   linkedin_url: z.string().nullable(),
   instagram_handle: z.string().nullable(),
   notes: z.string().nullable(),
+  demo_link: z.string().nullable(),
   created_by_id: z.string(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),

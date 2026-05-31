@@ -126,6 +126,7 @@ vi.mock('../../modules/companies/service.js', () => {
         linkedin_url: input.linkedin_url ?? null,
         instagram_handle: input.instagram_handle ?? null,
         notes: input.notes ?? null,
+        demo_link: input.demo_link ?? null,
         created_by_id: createdById,
         created_at: now,
         updated_at: now,
