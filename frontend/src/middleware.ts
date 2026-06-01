@@ -14,12 +14,12 @@ export function middleware(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;
   const hasRefresh = req.cookies.has(REFRESH_COOKIE);
 
-  // Si ya está logueado e intenta entrar a /login → manda al dashboard.
-  if (PUBLIC_PATHS.includes(pathname) && hasRefresh) {
-    const url = req.nextUrl.clone();
-    url.pathname = '/dashboard';
-    return NextResponse.redirect(url);
-  }
+  // /login SIEMPRE accesible: NO rebotamos a /dashboard por la mera presencia de
+  // la cookie. El middleware no valida el JWT, así que una cookie presente pero
+  // inválida (revocada por reúso multi-pestaña, o expirada) dejaría al usuario
+  // atrapado en un bucle /login↔/dashboard sin poder volver a entrar. El redirect
+  // de cortesía para usuarios ya autenticados lo hace el cliente (LoginForm) con
+  // la sesión en memoria, que sí es de fiar.
 
   // Si es ruta protegida y no hay cookie → /login.
   if (!PUBLIC_PATHS.includes(pathname) && !hasRefresh) {

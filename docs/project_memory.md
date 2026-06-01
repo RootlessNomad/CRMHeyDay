@@ -17,6 +17,22 @@
 - **Credencial `google_places`** cargada en el vault (activa). Ruta `POST /api/v1/discovery/bulk-search` responde 401 (viva + admin). Todo verificado por SSH + curl público.
 - **Acceso SSH**: clave de este Mac en `root@46.202.131.13:/root/.ssh/authorized_keys` (revocar quitando la línea `…your-email@example.com` cuando se desee).
 
+## 🩹 Fixes auditoría (2026-06-01)
+
+- **#1 bucle de auth** (`AuthBootstrap` re-ejecutaba refresh en cada F5 → "se queda cargando") — FIX
+  `startedRef` + sin `cancelled`. Commit `69fb91b`. **Desplegado y verificado** (1 solo refresh, sin bucle).
+- **#2 Anthropic sin crédito** — key vieja revocada; key nueva `…5wAA` en backend+worker, con saldo.
+  **Desplegado y verificado** (enrichment real → `succeeded`, sin error de crédito).
+- **#5 job huérfano** `integration_test` (24d en queued) — marcado `failed` en BD.
+- **Parseo JSON IA robusto** (`core/ai/json.ts → parseAiJson`, reemplaza 3 copias de `safeJsonParse`) —
+  resuelve enrichment `partial` por JSON inválido. Commit `6ca2a1b`. **Pendiente: redeploy backend+worker.**
+- **Deferido (deuda)**: #3 multi-pestaña desloguea (rotación refresh token compartido — fix completo
+  requiere coordinación cross-tab; no se toca auth en caliente); CSV formula injection (sin trigger hoy);
+  rendimiento ~1-2s/llamada (investigar); reaper de jobs zombie.
+- Auditoría completa en `work_log.md` → "## Auditoría producción (2026-06-01) + fixes".
+- **Acceso SSH** de este equipo en `root@46.202.131.13` (revocar quitando la línea `…your-email@example.com`
+  de `/root/.ssh/authorized_keys`).
+
 ## Estado verificable
 
 | Check                        | Estado |

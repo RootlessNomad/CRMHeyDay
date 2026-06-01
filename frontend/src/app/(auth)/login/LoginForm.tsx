@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
@@ -19,6 +19,18 @@ export function LoginForm(): JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
   const setSession = useAuthStore((s) => s.setSession);
+  const user = useAuthStore((s) => s.user);
+  const accessToken = useAuthStore((s) => s.accessToken);
+
+  // Cortesía: si ya hay sesión válida en memoria, no mostramos el login.
+  // (El middleware ya no rebota por cookie, así que este redirect lo hace el
+  // cliente con datos de fiar; una cookie inválida deja ver el formulario.)
+  useEffect(() => {
+    if (user && accessToken) {
+      const next = searchParams.get('next');
+      router.replace(next && next.startsWith('/') ? next : '/dashboard');
+    }
+  }, [user, accessToken, router, searchParams]);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

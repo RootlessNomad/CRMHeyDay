@@ -1296,6 +1296,14 @@ Auditoría a fondo del CRM en prod (SSH al VPS + sesión admin + barrido de API)
 - **🟡 Multi-pestaña**: rotación del refresh token compartido puede disparar reúso al abrir 2 pestañas a la
   vez. Mitigado por el fix #1 (1 refresh por carga en vez de bucle); fix completo (coordinación cross-tab)
   queda como deuda — no se toca en caliente el sistema de auth.
+- **🔴 Lockout por cookie inválida (middleware ↔ bootstrap)** — descubierto al barrer la UI. El middleware
+  redirige `/login`→`/dashboard` solo por **presencia** de la cookie `hd_refresh` (no la valida). Si la cookie
+  está presente pero **inválida** (revocada por reúso multi-pestaña, o expirada): `/dashboard` → bootstrap
+  refresh→401 → quiere `/login` → middleware rebota a `/dashboard` → **bucle, atascado en "Cargando…", sin
+  poder volver a loguearse** (el `clear()` no borra la cookie httpOnly; logout exige auth). **FIX** (frontend):
+  el middleware ya NO rebota `/login`→`/dashboard` (deja `/login` siempre accesible); el redirect de cortesía
+  para usuarios autenticados lo hace `LoginForm` con la sesión en memoria. typecheck/lint/build verdes.
+  Requiere redeploy frontend. (Relacionado con #3 multi-pestaña; este era el síntoma grave.)
 - **🟢 Parseo JSON de IA robusto** (resuelve los enrichment `partial` por `lead_enrichment_extract returned
 invalid JSON`). El `safeJsonParse` estaba triplicado (intel/handler, intel/service, content/handlers) con
   `JSON.parse` ingenuo → fallaba si el modelo envolvía el JSON en ` ```json ` o prosa. **FIX**: helper
