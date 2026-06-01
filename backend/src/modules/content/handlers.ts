@@ -1,7 +1,11 @@
 import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
-import { anthropicClient, type AnthropicClient } from '../../core/ai/index.js';
+import {
+  anthropicClient,
+  parseAiJson as safeJsonParse,
+  type AnthropicClient,
+} from '../../core/ai/index.js';
 import { prisma as defaultPrisma } from '../../core/prisma/client.js';
 import type {
   ContentGenerationPayload,
@@ -33,14 +37,6 @@ export interface RunIdeaGenerationDeps {
   ai?: AiClientLike;
   audit?: AuditService;
   now?: () => Date;
-}
-
-function safeJsonParse<T>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
 }
 
 export async function runIdeaGeneration(

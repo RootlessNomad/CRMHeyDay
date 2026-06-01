@@ -8,7 +8,11 @@ import type {
   ServiceLine,
 } from '@prisma/client';
 
-import { anthropicClient, type AnthropicClient } from '../../core/ai/index.js';
+import {
+  anthropicClient,
+  parseAiJson as safeJsonParse,
+  type AnthropicClient,
+} from '../../core/ai/index.js';
 import { prisma as defaultPrisma } from '../../core/prisma/client.js';
 import { scrapeWebsite, type ScrapeResult } from '../../core/scraping/index.js';
 import type { JobResult } from '../../core/queue/types.js';
@@ -49,14 +53,6 @@ export interface RunEnrichmentDeps {
   scrape?: typeof scrapeWebsite;
   audit?: AuditService;
   now?: () => Date;
-}
-
-function safeJsonParse<T>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
 }
 
 function mapSizeSignal(input: ParsedExtractedFields['sizeSignal']): CompanySizeSignal | undefined {

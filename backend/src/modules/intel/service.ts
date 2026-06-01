@@ -13,7 +13,11 @@ import { randomUUID } from 'node:crypto';
 import { parse } from 'csv-parse/sync';
 
 import { enqueue, QUEUE_NAMES } from '../../core/queue/queues.js';
-import { anthropicClient, type AnthropicClient } from '../../core/ai/index.js';
+import {
+  anthropicClient,
+  parseAiJson as safeJsonParse,
+  type AnthropicClient,
+} from '../../core/ai/index.js';
 import { prisma as defaultPrisma } from '../../core/prisma/client.js';
 import { normalizeDomain } from '../companies/domain.js';
 import { auditService, type AuditService } from '../audit/index.js';
@@ -192,14 +196,6 @@ function toPainPointDto(row: PainPointWithRelations): PainPointDto {
 function normalizeInputUrl(inputUrl: string): string {
   const parsed = new URL(inputUrl);
   return parsed.toString();
-}
-
-function safeJsonParse<T>(value: string): T | null {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
 }
 
 function unique<T>(items: T[]): T[] {

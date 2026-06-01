@@ -1296,6 +1296,11 @@ Auditoría a fondo del CRM en prod (SSH al VPS + sesión admin + barrido de API)
 - **🟡 Multi-pestaña**: rotación del refresh token compartido puede disparar reúso al abrir 2 pestañas a la
   vez. Mitigado por el fix #1 (1 refresh por carga en vez de bucle); fix completo (coordinación cross-tab)
   queda como deuda — no se toca en caliente el sistema de auth.
+- **🟢 Parseo JSON de IA robusto** (resuelve los enrichment `partial` por `lead_enrichment_extract returned
+invalid JSON`). El `safeJsonParse` estaba triplicado (intel/handler, intel/service, content/handlers) con
+  `JSON.parse` ingenuo → fallaba si el modelo envolvía el JSON en ` ```json ` o prosa. **FIX**: helper
+  compartido `core/ai/json.ts → parseAiJson` (parse directo → fences markdown → objeto/array embebido), usado
+  en los 3 sitios. +5 tests. typecheck/lint/100 tests verdes. Requiere redeploy backend+worker.
 - **Verificado OK**: cabeceras de seguridad (HSTS/XFO/nosniff/Referrer/CORS al origen), vault AES-256-GCM sin
   fugas en DTO, auth/authz (401 sin token, admin protegido), sin 5xx, worker vivo, `discovery`/`demo_link`
   desplegados. localStorage **sí** se limpia en logout (deuda previa ya resuelta en Topbar).
