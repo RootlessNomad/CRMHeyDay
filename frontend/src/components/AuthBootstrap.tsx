@@ -9,7 +9,7 @@
 // Si ambos fallan, la cookie está caducada/revocada → se limpia y se redirige.
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { apiFetch } from '@/lib/api/client';
 import { meRequest } from '@/lib/auth/api';
@@ -29,36 +29,35 @@ export function AuthBootstrap({ children }: { children: React.ReactNode }): JSX.
   const clear = useAuthStore((s) => s.clear);
 
   const [ready, setReady] = useState<boolean>(Boolean(user && accessToken));
+  // El bootstrap (refresh + me) debe correr UNA sola vez. Sin esta guarda,
+  // `updateAccess` muta `accessToken` (que está en deps) → el effect se
+  // re-ejecuta y, al no haberse seteado `user` todavía, vuelve a pedir
+  // /auth/refresh en bucle (rota el token hasta disparar reúso → logout).
+  const startedRef = useRef(false);
 
   useEffect(() => {
     if (user && accessToken) {
       setReady(true);
       return;
     }
+    if (startedRef.current) return;
+    startedRef.current = true;
 
-    let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const refreshed = await apiFetch<RefreshResponse>('/auth/refresh', {
           method: 'POST',
           skipAuth: true,
         });
-        if (cancelled) return;
         updateAccess(refreshed);
         const { user: u } = await meRequest();
-        if (cancelled) return;
         setSession({ user: u, ...refreshed });
         setReady(true);
       } catch {
-        if (cancelled) return;
         clear();
         router.replace('/login');
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
   }, [user, accessToken, setSession, updateAccess, clear, router]);
 
   if (!ready) {

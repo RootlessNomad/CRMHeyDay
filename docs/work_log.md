@@ -1279,6 +1279,27 @@ Sustituir `iron-pulse` por gimnasios reales del CRM al enviar (copiar `_template
 desviación consciente (Regla 9) justificada por anclas ya exploradas, alcance acotado y supervisión activa
 del usuario; compensada con verificación independiente (typecheck/lint/build/tests/preview) en cada pasada.
 
+## Auditoría producción (2026-06-01) + fixes
+
+Auditoría a fondo del CRM en prod (SSH al VPS + sesión admin + barrido de API). Hallazgos y acciones:
+
+- **🔴 CRÍTICO — bucle de refresh en `AuthBootstrap`** (causa real del "se queda cargando"). El `useEffect`
+  tenía `accessToken` en deps y `updateAccess()` lo mutaba → re-ejecución; el `cancelled` abortaba antes de
+  `setSession`, así que `user` nunca se seteaba y reentraba pidiendo `/auth/refresh` en bucle (rota el token
+  hasta disparar reúso → logout). Como el access token vive **solo en memoria**, esto saltaba en **cada F5**.
+  **FIX**: guarda `startedRef` (corre una vez) + eliminado `cancelled`. `AuthBootstrap.tsx`. typecheck/lint/build verdes.
+- **🔴 CRÍTICO (acción usuario) — Anthropic sin crédito**: logs `"credit balance is too low"`; fallan
+  enrichment IA, pain points, service-fit, content gen, outbound regen (enrichment quedan `partial`). Resolver
+  en console.anthropic.com (la key es válida, es saldo).
+- **🟡 Job huérfano**: `integration_test` 24 días en `queued` (mirror que BullMQ perdió). **FIX**: marcado
+  `failed` en BD. (Sin reaper de zombies → deuda futura.)
+- **🟡 Multi-pestaña**: rotación del refresh token compartido puede disparar reúso al abrir 2 pestañas a la
+  vez. Mitigado por el fix #1 (1 refresh por carga en vez de bucle); fix completo (coordinación cross-tab)
+  queda como deuda — no se toca en caliente el sistema de auth.
+- **Verificado OK**: cabeceras de seguridad (HSTS/XFO/nosniff/Referrer/CORS al origen), vault AES-256-GCM sin
+  fugas en DTO, auth/authz (401 sin token, admin protegido), sin 5xx, worker vivo, `discovery`/`demo_link`
+  desplegados. localStorage **sí** se limpia en logout (deuda previa ya resuelta en Topbar).
+
 ## Review — M7 (cadena de outreach: UJ-31 / UJ-32 / UJ-33)
 
 Revisión independiente (subagente con contexto limpio, escéptico, leyendo el código real y corriendo los

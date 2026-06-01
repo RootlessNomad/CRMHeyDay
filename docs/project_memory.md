@@ -9,6 +9,14 @@
 - **heyday-demos desplegado en Vercel** (cuenta `rootlessnomad`, scope `alexs-projects-02366dd8`, project `heyday-demos` `prj_kH30lRdsBI8KuLjpQovuj0fSAktb`): producción en `https://heyday-demos.vercel.app` (demo: `/iron-pulse`, verificado 200 + 404 en slug desconocido). Dominio `demos.estudioheyday.com` añadido al proyecto, **pendiente solo el registro DNS** (CNAME `demos`→`cname.vercel-dns.com`, o A `demos`→`76.76.21.21`); NS actuales en `dns-parking.com`. Repo git: `github.com/RootlessNomad/heyday-demos` (privado, branch `main`) **conectado a Vercel** → cada push a `main` auto-despliega a producción.
 - **Next Step**: **Pasos operativos del usuario** (no-código): (1) añadir el registro DNS de `demos` en el registrar → Vercel verifica solo; (2) cargar key `google_places` en el vault `/admin/settings`; (3) Docker arriba → aplicar migraciones pendientes (`add_demo_link` + deuda UJ-28/29, IT-12) y verificar discovery/`demo_link` end-to-end; (4) sustituir demo `iron-pulse` por gimnasios reales (`cp _template.ts <slug>.ts` → push); opcional: crear repo remoto y conectar git a Vercel para auto-deploy.
 
+## 🚀 Producción (2026-05-31) — UJ-30 + UJ-31 DESPLEGADAS
+
+- Push a `main` (`305fde1`) → **Deploy manual en EasyPanel** (no hay webhook auto-deploy) de backend/worker/frontend.
+- **Migración `add_demo_link`** aplicada a mano (la imagen prod no trae prisma CLI): `ALTER TABLE companies ADD COLUMN demo_link TEXT` + registro en `_prisma_migrations` (checksum `c32719e5…`). Columna OK.
+- **Fix 502 frontend** permanente: `HOSTNAME=0.0.0.0` añadido en EasyPanel → heyday-frontend → Environment (Next standalone en Swarm enlazaba solo al hostname del contenedor). Verificado: enlaza a `0.0.0.0:3000`.
+- **Credencial `google_places`** cargada en el vault (activa). Ruta `POST /api/v1/discovery/bulk-search` responde 401 (viva + admin). Todo verificado por SSH + curl público.
+- **Acceso SSH**: clave de este Mac en `root@46.202.131.13:/root/.ssh/authorized_keys` (revocar quitando la línea `…your-email@example.com` cuando se desee).
+
 ## Estado verificable
 
 | Check                        | Estado |
