@@ -11,6 +11,7 @@ import { z } from 'zod';
 export const QUEUE_NAMES = {
   enrichment: 'enrichment',
   discovery: 'discovery',
+  leadDiscovery: 'lead_discovery',
   contentIdea: 'content_idea',
   contentGeneration: 'content_generation',
   contentAdapt: 'content_adapt',
@@ -47,6 +48,14 @@ export const DiscoveryPayloadSchema = z.object({
   actorUserId: z.string().min(1),
 });
 export type DiscoveryPayload = z.infer<typeof DiscoveryPayloadSchema>;
+
+export const LeadDiscoveryPayloadSchema = z.object({
+  city: z.string().min(1).max(120),
+  businessType: z.string().min(1).max(120),
+  maxResults: z.number().int().min(1).max(60).default(20),
+  actorUserId: z.string().min(1),
+});
+export type LeadDiscoveryPayload = z.infer<typeof LeadDiscoveryPayloadSchema>;
 
 export const ContentIdeaPayloadSchema = z.object({
   pillarId: z.string().min(1),
@@ -97,6 +106,7 @@ export type IntegrationTestPayload = z.infer<typeof IntegrationTestPayloadSchema
 export const QUEUE_SCHEMAS = {
   [QUEUE_NAMES.enrichment]: EnrichmentPayloadSchema,
   [QUEUE_NAMES.discovery]: DiscoveryPayloadSchema,
+  [QUEUE_NAMES.leadDiscovery]: LeadDiscoveryPayloadSchema,
   [QUEUE_NAMES.contentIdea]: ContentIdeaPayloadSchema,
   [QUEUE_NAMES.contentGeneration]: ContentGenerationPayloadSchema,
   [QUEUE_NAMES.contentAdapt]: ContentAdaptPayloadSchema,
@@ -106,6 +116,7 @@ export const QUEUE_SCHEMAS = {
 export type PayloadForQueue = {
   [QUEUE_NAMES.enrichment]: EnrichmentPayload;
   [QUEUE_NAMES.discovery]: DiscoveryPayload;
+  [QUEUE_NAMES.leadDiscovery]: LeadDiscoveryPayload;
   [QUEUE_NAMES.contentIdea]: ContentIdeaPayload;
   [QUEUE_NAMES.contentGeneration]: ContentGenerationPayload;
   [QUEUE_NAMES.contentAdapt]: ContentAdaptPayload;

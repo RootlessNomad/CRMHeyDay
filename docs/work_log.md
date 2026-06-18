@@ -2,6 +2,37 @@
 
 Chronological record of all meaningful work. Each entry covers one infrastructure task, user journey, or significant change.
 
+## UJ-34 — Lead Discovery por Zona con Email Personalizado (2026-06-15)
+
+**Scope:** Nueva feature que transforma la pestaña "Investigar" de Lead Intelligence. Añade modo de búsqueda por ciudad + tipo de negocio que descubre leads cualificados y genera emails en frío listos para copiar.
+
+**Backend (Pase 1 — Codex):**
+
+- `backend/prisma/schema.prisma`: campo `emailDraft String? @map("email_draft") @db.Text` añadido a `OutboundPrep`
+- Migración `20260615120000_add_email_draft` + `20260615120001_add_ai_feature_lead_discovery`
+- Queue `lead_discovery` añadida a `QUEUE_NAMES`, `QUEUE_SCHEMAS`, `PayloadForQueue` y `queues.ts`
+- Prompt `leadDiscoveryEmailPrompt` en `modules/intel/prompts.ts`: genera en una sola llamada a Claude los campos de outbound prep + email personalizado completo (score, segmento, asunto, cuerpo)
+- `OutboundPrepDtoSchema` y `toOutboundPrepDto` actualizados con `email_draft`
+- Módulo nuevo `modules/lead-discovery/` (schemas, service, handler, index): busca Google Places → dedup → Claude scoring → si score ≥ 40: crea Company + Lead (pipeline por defecto, stage Nuevo, source 'other') + upsert OutboundPrep con emailDraft
+- Endpoint `POST /intel/lead-discovery` (admin, rateLimit 3/min) → devuelve jobId
+- Worker actualizado con handler `runLeadDiscovery`
+- AI feature `lead_discovery` registrada en models.ts (Sonnet default, maxTokens 2048)
+
+**Frontend (Pase 2 — Codex):**
+
+- `lib/api/lead-discovery.ts`: cliente API nuevo (`startLeadDiscovery`)
+- `OutboundPrepDto`: campo `email_draft: string | null` añadido
+- `LeadDiscoveryForm.tsx`: formulario inline ciudad + tipo → llama endpoint → emite jobId
+- `LeadDiscoveryStatus.tsx`: polling (4s) → summary "X cualificados · Y creados (de Z encontrados)" → invalida queries `leads` + `companies` al terminar
+- `/intel/research/page.tsx`: tab "Buscar" como default (antes "URL"), orden: Buscar | URL | CSV
+- `OutboundPrepCard.tsx`: sección "Email en frío" con textarea readonly + botón "Copiar email"
+
+**Verificación:** typecheck ✅ backend + frontend | lint ✅ | intel/service.test.ts 33/33 ✅ | fallos de tests de routes son pre-existentes (Redis sin Docker)
+
+**Seguridad:** API key Google Places via secretsResolver (vault), nunca loggada. Rate limit 3/min en endpoint. requireAuth + requireRole('admin'). No secretos hardcodeados.
+
+**Deuda pendiente:** migración `add_email_draft` pendiente de aplicar con Docker arriba (`prisma migrate deploy`). Verificación end-to-end requiere key `google_places` en vault y Docker.
+
 ## Incidente PROD — 2026-05-31: frontend 502 (`crm.estudioheyday.com`)
 
 **Síntoma:** todas las páginas devolvían 502 ("Service is not reachable" de EasyPanel). Backend, DB,

@@ -164,6 +164,15 @@ export function OutboundPrepCard({ companyId }: { companyId: string }): JSX.Elem
     }
   }
 
+  async function handleCopyEmail(text: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('Email copiado');
+    } catch {
+      toast.error('No se pudo copiar el email.');
+    }
+  }
+
   useEffect(() => {
     if (!outboundPrepQuery.data) {
       setDraft(null);
@@ -370,6 +379,27 @@ export function OutboundPrepCard({ companyId }: { companyId: string }): JSX.Elem
           ))}
         </div>
       </div>
+
+      {prep.email_draft ? (
+        <div className="border-border bg-surface rounded-2xl border p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Email en frío</h3>
+            <button
+              type="button"
+              onClick={() => void handleCopyEmail(prep.email_draft!)}
+              className="border-border bg-surface-muted hover:bg-bg rounded-md border px-3 py-1.5 text-xs font-medium transition"
+            >
+              Copiar email
+            </button>
+          </div>
+          <textarea
+            readOnly
+            value={prep.email_draft}
+            rows={10}
+            className="border-border bg-bg min-h-40 w-full rounded-xl border px-3 py-2 text-sm leading-6 outline-none"
+          />
+        </div>
+      ) : null}
 
       <div className="border-border bg-surface rounded-2xl border p-5 shadow-sm">
         <div className="mb-3">

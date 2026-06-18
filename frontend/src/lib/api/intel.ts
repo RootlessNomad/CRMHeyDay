@@ -93,6 +93,7 @@ export interface OutboundPrepDto {
   service_pitch: string;
   tone_guidance: string;
   priority_score: number;
+  email_draft: string | null;
   sdr_notes: string | null;
   last_generated_at: string;
   last_generated_by_id: string | null;

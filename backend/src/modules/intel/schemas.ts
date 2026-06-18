@@ -152,6 +152,7 @@ export const OutboundPrepDtoSchema = z.object({
   tone_guidance: z.string(),
   priority_score: z.number().int().min(0).max(100),
   sdr_notes: z.string().nullable(),
+  email_draft: z.string().nullable(),
   last_generated_at: z.string().datetime(),
   last_generated_by_id: z.string().nullable(),
   created_at: z.string().datetime(),

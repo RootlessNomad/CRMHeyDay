@@ -20,6 +20,7 @@ import { closeQueues } from '../core/queue/queues.js';
 import { QUEUE_NAMES, QUEUE_SCHEMAS, type JobResult, type QueueName } from '../core/queue/types.js';
 import { runEnrichment } from '../modules/intel/handler.js';
 import { runDiscovery } from '../modules/discovery/handler.js';
+import { runLeadDiscovery } from '../modules/lead-discovery/handler.js';
 import { runContentGeneration, runIdeaGeneration } from '../modules/content/handlers.js';
 
 const log = childLogger({ component: 'worker' });
@@ -36,6 +37,7 @@ type Handler<N extends QueueName> = (
 const handlers: { [N in QueueName]: Handler<N> } = {
   [QUEUE_NAMES.enrichment]: async (payload) => runEnrichment(payload as never),
   [QUEUE_NAMES.discovery]: async (payload) => runDiscovery(payload as never),
+  [QUEUE_NAMES.leadDiscovery]: async (payload) => runLeadDiscovery(payload as never),
   [QUEUE_NAMES.contentIdea]: async (payload) => runIdeaGeneration(payload as never),
   [QUEUE_NAMES.contentGeneration]: async (payload) => runContentGeneration(payload as never),
   [QUEUE_NAMES.contentAdapt]: async (payload, ctx) => {

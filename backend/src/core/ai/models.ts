@@ -32,6 +32,7 @@ export const FEATURE_MODEL_MAP: Record<AiFeature, FeatureConfig> = {
   pain_points: { primary: 'default', fallback: 'fast', maxTokens: 4096, temperature: 0.2 },
   service_fit: { primary: 'default', maxTokens: 2048, temperature: 0.3 },
   outbound_prep: { primary: 'default', maxTokens: 2048, temperature: 0.4 },
+  lead_discovery: { primary: 'default', fallback: 'fast', maxTokens: 2048, temperature: 0.4 },
   content_idea: { primary: 'fast', maxTokens: 1024, temperature: 0.8 },
   content_draft: { primary: 'default', maxTokens: 4096, temperature: 0.7 },
   content_adapt: { primary: 'fast', maxTokens: 2048, temperature: 0.5 },

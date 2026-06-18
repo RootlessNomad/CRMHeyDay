@@ -3,13 +3,16 @@
 import { useState } from 'react';
 
 import { BulkImportForm } from '@/components/intel/BulkImportForm';
+import { LeadDiscoveryForm } from '@/components/intel/LeadDiscoveryForm';
+import { LeadDiscoveryStatus } from '@/components/intel/LeadDiscoveryStatus';
 import { RecentRunsList } from '@/components/intel/RecentRunsList';
 import { StartResearchForm } from '@/components/intel/StartResearchForm';
 
-type ResearchTab = 'url' | 'csv';
+type ResearchTab = 'search' | 'url' | 'csv';
 
 export default function IntelResearchPage(): JSX.Element {
-  const [activeTab, setActiveTab] = useState<ResearchTab>('url');
+  const [activeTab, setActiveTab] = useState<ResearchTab>('search');
+  const [jobId, setJobId] = useState<string | null>(null);
   const [runIds, setRunIds] = useState<string[]>([]);
 
   function prependRunIds(nextRunIds: string[]): void {
@@ -21,12 +24,22 @@ export default function IntelResearchPage(): JSX.Element {
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Investigar empresa</h1>
         <p className="text-text-muted text-sm">
-          Lanza investigaciones desde una URL o importando un CSV y sigue el progreso en esta
-          sesión.
+          Descubre leads por zona, investiga por URL o importa un CSV.
         </p>
       </div>
 
       <div className="border-border bg-surface inline-flex rounded-xl border p-1 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setActiveTab('search')}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+            activeTab === 'search'
+              ? 'bg-accent text-white'
+              : 'text-text-muted hover:text-foreground'
+          }`}
+        >
+          Buscar
+        </button>
         <button
           type="button"
           onClick={() => setActiveTab('url')}
@@ -47,7 +60,13 @@ export default function IntelResearchPage(): JSX.Element {
         </button>
       </div>
 
-      {activeTab === 'url' ? (
+      {activeTab === 'search' ? (
+        jobId ? (
+          <LeadDiscoveryStatus jobId={jobId} onDismiss={() => setJobId(null)} />
+        ) : (
+          <LeadDiscoveryForm onJobCreated={setJobId} />
+        )
+      ) : activeTab === 'url' ? (
         <StartResearchForm
           onRunCreated={(runId, _companyId) => {
             prependRunIds([runId]);

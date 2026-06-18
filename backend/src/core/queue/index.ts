@@ -2,6 +2,7 @@ export {
   QUEUE_NAMES,
   type QueueName,
   type EnrichmentPayload,
+  type LeadDiscoveryPayload,
   type ContentGenerationPayload,
   type ContentAdaptPayload,
   type IntegrationTestPayload,

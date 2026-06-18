@@ -18,6 +18,10 @@ import {
   ServiceFitRegenerateSchema,
   intelService,
 } from '../../modules/intel/index.js';
+import {
+  LeadDiscoveryRequestSchema,
+  leadDiscoveryService,
+} from '../../modules/lead-discovery/index.js';
 import { anthropicClient } from '../../core/ai/index.js';
 import {
   IntelCsvTooLargeError,
@@ -48,6 +52,29 @@ function rethrowIntelError(app: FastifyInstance, error: unknown): never {
 
 export async function registerIntelRoutes(app: FastifyInstance): Promise<void> {
   const adminGuard = { preHandler: [app.requireAuth, app.requireRole('admin')] };
+
+  app.post(
+    '/intel/lead-discovery',
+    {
+      preHandler: [app.requireAuth, app.requireRole('admin')],
+      config: {
+        rateLimit: {
+          max: 3,
+          timeWindow: '1 minute',
+          hook: 'preHandler',
+          keyGenerator: (request: { authUser?: { id?: string }; ip: string }) =>
+            request.authUser?.id ?? request.ip,
+        },
+      },
+    },
+    async (request, reply) => {
+      const body = LeadDiscoveryRequestSchema.parse(request.body);
+      const actorUserId = request.authUser?.id;
+      if (!actorUserId) throw app.httpErrors.unauthorized();
+      const { jobId } = await leadDiscoveryService.enqueueleadDiscovery(body, actorUserId);
+      return reply.code(202).send({ jobId });
+    },
+  );
 
   app.post(
     '/intel/enrichment-runs',

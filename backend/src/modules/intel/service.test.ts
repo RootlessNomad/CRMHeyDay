@@ -171,6 +171,7 @@ function makeOutboundPrep(overrides: Partial<OutboundPrep> = {}): OutboundPrep {
     toneGuidance: 'Directo, consultivo y basado en evidencia.',
     priorityScore: 78,
     sdrNotes: null,
+    emailDraft: null,
     lastGeneratedAt: now,
     lastGeneratedById: 'user_1',
     createdAt: now,

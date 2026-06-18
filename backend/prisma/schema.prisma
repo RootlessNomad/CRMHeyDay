@@ -187,6 +187,7 @@ enum AiFeature {
   pain_points
   service_fit
   outbound_prep
+  lead_discovery
   content_idea
   content_draft
   content_adapt
@@ -614,6 +615,7 @@ model OutboundPrep {
   toneGuidance         String   @map("tone_guidance")
   priorityScore        Int      @map("priority_score")
   sdrNotes             String?  @map("sdr_notes")
+  emailDraft           String?  @map("email_draft") @db.Text
   lastGeneratedAt      DateTime @map("last_generated_at") @db.Timestamptz(6)
   lastGeneratedById    String?  @map("last_generated_by_id")
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)

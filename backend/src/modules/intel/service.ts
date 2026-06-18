@@ -253,6 +253,7 @@ function toOutboundPrepDto(row: OutboundPrep): OutboundPrepDto {
     tone_guidance: row.toneGuidance,
     priority_score: row.priorityScore,
     sdr_notes: row.sdrNotes,
+    email_draft: row.emailDraft ?? null,
     last_generated_at: row.lastGeneratedAt.toISOString(),
     last_generated_by_id: row.lastGeneratedById,
     created_at: row.createdAt.toISOString(),

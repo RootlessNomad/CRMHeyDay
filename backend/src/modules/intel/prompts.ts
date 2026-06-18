@@ -118,3 +118,45 @@ export function outboundPrepPrompt(input: {
     messages: [{ role: 'user', content: JSON.stringify(input, null, 2) }],
   };
 }
+
+export function leadDiscoveryEmailPrompt(input: {
+  businessName: string;
+  businessType: string;
+  city: string;
+  address: string | null;
+  rating: number | null;
+  ratingCount: number | null;
+  website: string | null;
+}): PromptBundle {
+  return {
+    systemBlocks: [
+      {
+        text:
+          'Eres un comercial de HeyDay, empresa española que ayuda a negocios como gimnasios, ' +
+          'clínicas de fisioterapia y estudios de bienestar a ahorrar horas cada semana mediante ' +
+          'software de gestión y automatización. Tu misión es redactar emails en frío muy personalizados, ' +
+          'con tono humano y cercano, como si los hubiera escrito una persona real que conoce el negocio. ' +
+          'Devuelve SOLO JSON parseable y válido, sin markdown ni texto extra. ' +
+          'Schema exacto:\n' +
+          '{\n' +
+          '  "score": <entero 0-100, oportunidad estimada de ahorro de horas>,\n' +
+          '  "segment": <string, tipo de negocio o subsegmento>,\n' +
+          '  "likely_need": <string, necesidad principal probable>,\n' +
+          '  "outreach_angle": <string, ángulo del primer contacto>,\n' +
+          '  "value_proposition": <string, valor diferencial que resonaría>,\n' +
+          '  "service_pitch": <string, pitch de servicio breve>,\n' +
+          '  "tone_guidance": <string, guía de tono para el SDR>,\n' +
+          '  "email_subject": <string, asunto del email>,\n' +
+          '  "email_body": <string, cuerpo completo del email, saludo + cuerpo + cierre, listo para copiar y pegar>\n' +
+          '}\n' +
+          'Reglas para el email: máximo 4 párrafos cortos, sin jerga técnica, sin palabras como ' +
+          '"innovador" o "solución", cita algún detalle específico del negocio (ciudad, tipo, valoración ' +
+          'si es relevante), termina con una CTA concreta y amigable. Usa tú, no usted. ' +
+          'Firma: "El equipo de HeyDay". Score: >60 = negocio con alta rotación manual (clases, socios, ' +
+          'citas), 40-60 = potencial moderado, <40 = poca señal de dolor operativo.',
+        cache: true,
+      },
+    ],
+    messages: [{ role: 'user', content: JSON.stringify(input, null, 2) }],
+  };
+}
